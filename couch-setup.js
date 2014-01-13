@@ -33,7 +33,7 @@
 				deferred.resolve(db);
 			} else {
 				console.log('db already exists!');
-				deferred.reject();
+				deferred.resolve(db); // db.reject()
 			}
 
 		});
@@ -47,7 +47,7 @@
 		db.save('_design/runs', {
 			views: {
 				list: {
-					map: 'function (doc){ emit(doc.mean, doc.stddev) }'
+					map: 'function (doc){ emit(null, {mean:doc.mean, stddev:doc.stddev, count:doc.count} ) }'
 				}
 			}
 		});

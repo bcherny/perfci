@@ -8,7 +8,7 @@
 	new cradle
 	.Connection(config.host, config.port)
 	.database(config.database)
-	.get('', function (err, doc) {
+	.view('runs/list', function (err, doc) {
 
 		if (err) {
 			console.error(err);
