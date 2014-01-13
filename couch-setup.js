@@ -5,12 +5,7 @@
 	var cradle = require('cradle');
 
 	// config
-	var config = {
-		database: 'runs',
-		host: '127.0.0.1',
-		port: 5984,
-		view: 'runs'
-	};
+	var config = require('cat-settings').loadSync(__dirname + '/config.json');
 
 	// connect to db
 	var connection = new cradle.Connection(config.host, config.port),

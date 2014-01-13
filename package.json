@@ -18,6 +18,7 @@
   "dependencies": {
     "benchmark": "~1.0.0",
     "lodash": "~2.4.1",
-    "cradle": "~0.6.6"
+    "cradle": "~0.6.6",
+    "cat-settings": "~1.0.0"
   }
 }

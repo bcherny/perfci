@@ -2,13 +2,7 @@
 
 	"use strict";
 
-	var config = {
-			db: {
-				database: 'runs',
-				host: '127.0.0.1',
-				port: 5984
-			}
-		},
+	var config = require('cat-settings').loadSync(__dirname + '/config.json'),
 		cradle = require('cradle'),
 		suite = require('./sample-bench');
 
@@ -52,15 +46,9 @@
 
 	function init () {
 
-		// configure db
-		cradle.setup({
-			host: '127.0.0.1',
-			port: 5984
-		});
-
 		// connect to db
-		var connection = new cradle.Connection(config.db.host, config.db.port),
-			db = connection.database(config.db.database);
+		var connection = new cradle.Connection(config.host, config.port),
+			db = connection.database(config.database);
 
 		// run benchmark
 		suite
