@@ -59,7 +59,7 @@
 		});
 
 		// connect to db
-		var connection = (new Cradle.Connection)(config.db.host, config.db.port),
+		var connection = new cradle.Connection(config.db.host, config.db.port),
 			db = connection.database(config.db.database);
 
 		// run benchmark
