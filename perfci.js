@@ -4,13 +4,35 @@
 
 	var config = require('cat-settings').loadSync(__dirname + '/config.json'),
 		cradle = require('cradle'),
-		suite = require('./sample-bench');
+		objectid = require('objectid'),
+		suite = require('./sample-bench'),
+		when = require('when');
+
+	// model
+	var state = {
+		// connect to db
+		connection: new cradle.Connection(config.host, config.port)
+	};
 
 	function save (data) {
 
+		var deferred = when.defer();
 
+		// save
+		state
+		.connection
+		.database(config.database)
+		.save(objectid().toString(), data, function (err, res) {
 
-		return data;
+			if (err) {
+				deferred.reject(new Error(err));
+			} else {
+				deferred.resolve(res);
+			}
+
+		});
+
+		return deferred.promise;
 
 	}
 
@@ -36,8 +58,13 @@
 
 		var data = normalizeStats(this[0].stats);
 
-		log(data);
-		save(data);
+		log('saving', data);
+
+		save(data).then(function (res) {
+			log('saved', res);
+		}, function (err) {
+			throw err;
+		});
 	}
 
 	function cycle (event) {
@@ -45,10 +72,6 @@
 	}
 
 	function init () {
-
-		// connect to db
-		var connection = new cradle.Connection(config.host, config.port),
-			db = connection.database(config.database);
 
 		// run benchmark
 		suite
