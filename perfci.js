@@ -5,7 +5,7 @@
 	var config = require('cat-settings').loadSync(__dirname + '/config.json'),
 		cradle = require('cradle'),
 		objectid = require('objectid'),
-		suite = require('./sample-bench'),
+		//suite = require('./sample-bench'),
 		when = require('when');
 
 	// model
@@ -72,7 +72,7 @@
 		log('cycle ' + event.target.stats.mean);
 	}
 
-	function init () {
+	function init (suite) {
 
 		// run benchmark
 		suite
@@ -82,6 +82,6 @@
 
 	}
 
-	init();
+	module.exports = init;
 
 })();
