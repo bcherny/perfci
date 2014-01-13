@@ -60,7 +60,8 @@
 
 		log('saving', data);
 
-		save(data).then(function (res) {
+		save(data)
+		.then(function (res) {
 			log('saved', res);
 		}, function (err) {
 			throw err;
