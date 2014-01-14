@@ -3,32 +3,50 @@
 	"use strict";
 
 	var fs = require('fs'),
+		when = require('when'),
 		perfci = require('./perfci'),
 		args = process.argv;
 
+	// check for arguments
 	if (args.length < 3) {
 		throw new Error('perfci cli expects files to be passed, eg. "node cli foo.js bar.js"');
 	}
 
-	args
-	.slice(2)
-	.forEach(function(file) {
+	// do it
+	args.slice(2).forEach(exists);
+
+	// helpers
+
+	function exists (file) {
+
+		var deferred = when.defer();
 
 		fs.exists(file, function (exists) {
 
-			if (!exists) {
-				throw new Error('File "' + file + '" does not exist!');
+			if (exists) {
+				run(file).then(deferred.resolve, deferred.reject);
+			} else {
+				deferred.reject();
 			}
 
 		});
 
-	})
-	.forEach(function(file) {
+		return deferred.promise;
 
-		perfci(require(file));
+	}
 
-	});
+	function run (file) {
 
+		var deferred = when.defer();
 
+		perfci(require('./' + file))
+		.then(
+			deferred.resolve,
+			deferred.reject
+		);
+
+		return deferred.promise;
+
+	}
 
 })();

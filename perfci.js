@@ -10,8 +10,12 @@
 
 	// model
 	var state = {
+
 		// connect to db
-		connection: new cradle.Connection(config.host, config.port)
+		connection: new cradle.Connection(config.host, config.port),
+
+		// promise
+		deferred: when.defer()
 	};
 
 	function save (data) {
@@ -63,8 +67,10 @@
 		save(data)
 		.then(function (res) {
 			log('saved', res);
+			state.deferred.resolve(res);
 		}, function (err) {
-			throw err;
+			state.deferred.reject(err);
+			//throw err;
 		});
 	}
 
@@ -75,10 +81,14 @@
 	function init (suite) {
 
 		// run benchmark
-		suite
-		.on('cycle', cycle)
-		.on('complete', complete)
-		.run();
+		setTimeout(function(){
+			suite
+			.on('cycle', cycle)
+			.on('complete', complete)
+			.run();
+		}, 0);
+
+		return state.deferred.promise;
 
 	}
 
