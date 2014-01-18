@@ -8,5 +8,9 @@
 	"http": {
 		"host": "http://localhost",
 		"port": 1234
+	},
+	"socket": {
+		"host": "http://127.0.0.1",
+		"port": 1235
 	}
 }
