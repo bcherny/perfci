@@ -12,7 +12,7 @@
 	var state = {
 
 		// connect to db
-		connection: new cradle.Connection(config.host, config.port),
+		connection: new cradle.Connection(config.db.host, config.db.port),
 
 		// promise
 		deferred: when.defer()
@@ -25,7 +25,7 @@
 		// save
 		state
 		.connection
-		.database(config.database)
+		.database(config.db.database)
 		.save(objectid().toString(), data, function (err, res) {
 
 			if (err) {

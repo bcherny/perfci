@@ -1,6 +1,8 @@
 {
-	"database": "runs",
-	"host": "127.0.0.1",
-	"port": 5984,
-	"view": "runs"
+	"db": {
+		"database": "runs",
+		"host": "127.0.0.1",
+		"port": 5984,
+		"view": "runs"
+	}
 }

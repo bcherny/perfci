@@ -6,8 +6,8 @@
 		cradle = require('cradle');
 
 	new cradle
-	.Connection(config.host, config.port)
-	.database(config.database)
+	.Connection(config.db.host, config.db.port)
+	.database(config.db.database)
 	.view('runs/list', function (err, doc) {
 
 		if (err) {

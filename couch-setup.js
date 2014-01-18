@@ -9,8 +9,8 @@
 	var config = require('cat-settings').loadSync(__dirname + '/config.json');
 
 	// connect to db
-	var connection = new cradle.Connection(config.host, config.port),
-		db = connection.database(config.database);
+	var connection = new cradle.Connection(config.db.host, config.db.port),
+		db = connection.database(config.db.database);
 
 	// lazy-create db
 	createDb(db)
