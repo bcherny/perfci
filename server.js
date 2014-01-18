@@ -1,10 +1,9 @@
 ;(function(){
 	"use strict";
 
-	var port = 1234;
-
 	var koa = require('koa'),
 		config = require('cat-settings').loadSync(__dirname + '/config.json'),
+		cors = require('koa-cors'),
 		cradle = require('cradle'),
 		when = require('when');
 
@@ -16,6 +15,8 @@
 
 	// middleware
 	
+	.use(cors())
+	
 	.use(function *() {
 
 		this.body = yield read();
@@ -24,7 +25,7 @@
 
 	// start server!
 
-	.listen(port);
+	.listen(config.http.port);
 
 	// helpers
 

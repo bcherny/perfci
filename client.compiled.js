@@ -2,104 +2,1436 @@
 ;(function(){
 	"use strict";
 
-	var config = {
-		url: 'localhost:1234'
-	};
+	var request = require('browser-request'),
+		when = require('when');
 
-	var uxhr = require('uxhr');
+	load('config.json').then(function (config) {
 
-	uxhr(config.url, {}, {
-		complete: function (res) {
-			console.log('complete', res);
-		}
+		load(config.http.host + ':' + config.http.port).then(function (data) {
+			console.log(data);
+		}, function (err) {
+			throw err;
+		});
+
+	}, function (err) {
+		throw err;
 	});
 
-})();
-},{"uxhr":2}],2:[function(require,module,exports){
-(function (root, factory) {
-	if (typeof exports === 'object') {
-		module.exports = factory();
-	} else if (typeof define === 'function' && define.amd) {
-		define('uxhr', factory);
-	} else {
-		root.uxhr = factory();
+	// helpers
+
+	function load (url) {
+
+		var deferred = when.defer();
+
+		request(url, function (err, res) {
+
+			if (err) deferred.reject(err);
+			
+			deferred.resolve(JSON.parse(res.body));
+
+		});
+
+		return deferred.promise;
+
 	}
-}(this, function () {
 
-	"use strict";
+})();
+},{"browser-request":2,"when":3}],2:[function(require,module,exports){
+// Browser Request
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 
-	return function (url, data, options) {
+var XHR = XMLHttpRequest
+if (!XHR) throw new Error('missing XMLHttpRequest')
 
-		data = data || '';
-		options = options || {};
+module.exports = request
+request.log = {
+  'trace': noop, 'debug': noop, 'info': noop, 'warn': noop, 'error': noop
+}
 
-		var complete = options.complete || function(){},
-			success = options.success || function(){},
-			error = options.error || function(){},
-			headers = options.headers || {},
-			method = options.method || 'GET',
-			sync = options.sync || false,
-			req = (function() {
+var DEFAULT_TIMEOUT = 3 * 60 * 1000 // 3 minutes
 
-				if (typeof 'XMLHttpRequest' !== 'undefined') {
+//
+// request
+//
 
-					// CORS (IE8-9)
-					if (url.indexOf('http') === 0 && typeof XDomainRequest !== 'undefined') {
-						return new XDomainRequest();
-					}
+function request(options, callback) {
+  // The entry-point to the API: prep the options object and pass the real work to run_xhr.
+  if(typeof callback !== 'function')
+    throw new Error('Bad callback given: ' + callback)
 
-					// local, CORS (other browsers)
-					return new XMLHttpRequest();
+  if(!options)
+    throw new Error('No options given')
 
-				} else if (typeof 'ActiveXObject' !== 'undefined') {
-					return new ActiveXObject('Microsoft.XMLHTTP');
-				}
+  var options_onResponse = options.onResponse; // Save this for later.
 
-			})();
+  if(typeof options === 'string')
+    options = {'uri':options};
+  else
+    options = JSON.parse(JSON.stringify(options)); // Use a duplicate for mutating.
 
-		if (!req) {
-			throw new Error ('Browser doesn\'t support XHR');
+  options.onResponse = options_onResponse // And put it back.
+
+  if (options.verbose) request.log = getLogger();
+
+  if(options.url) {
+    options.uri = options.url;
+    delete options.url;
+  }
+
+  if(!options.uri && options.uri !== "")
+    throw new Error("options.uri is a required argument");
+
+  if(typeof options.uri != "string")
+    throw new Error("options.uri must be a string");
+
+  var unsupported_options = ['proxy', '_redirectsFollowed', 'maxRedirects', 'followRedirect']
+  for (var i = 0; i < unsupported_options.length; i++)
+    if(options[ unsupported_options[i] ])
+      throw new Error("options." + unsupported_options[i] + " is not supported")
+
+  options.callback = callback
+  options.method = options.method || 'GET';
+  options.headers = options.headers || {};
+  options.body    = options.body || null
+  options.timeout = options.timeout || request.DEFAULT_TIMEOUT
+
+  if(options.headers.host)
+    throw new Error("Options.headers.host is not supported");
+
+  if(options.json) {
+    options.headers.accept = options.headers.accept || 'application/json'
+    if(options.method !== 'GET')
+      options.headers['content-type'] = 'application/json'
+
+    if(typeof options.json !== 'boolean')
+      options.body = JSON.stringify(options.json)
+    else if(typeof options.body !== 'string')
+      options.body = JSON.stringify(options.body)
+  }
+
+  // If onResponse is boolean true, call back immediately when the response is known,
+  // not when the full request is complete.
+  options.onResponse = options.onResponse || noop
+  if(options.onResponse === true) {
+    options.onResponse = callback
+    options.callback = noop
+  }
+
+  // XXX Browsers do not like this.
+  //if(options.body)
+  //  options.headers['content-length'] = options.body.length;
+
+  // HTTP basic authentication
+  if(!options.headers.authorization && options.auth)
+    options.headers.authorization = 'Basic ' + b64_enc(options.auth.username + ':' + options.auth.password);
+
+  return run_xhr(options)
+}
+
+var req_seq = 0
+function run_xhr(options) {
+  var xhr = new XHR
+    , timed_out = false
+    , is_cors = is_crossDomain(options.uri)
+    , supports_cors = ('withCredentials' in xhr)
+
+  req_seq += 1
+  xhr.seq_id = req_seq
+  xhr.id = req_seq + ': ' + options.method + ' ' + options.uri
+  xhr._id = xhr.id // I know I will type "_id" from habit all the time.
+
+  if(is_cors && !supports_cors) {
+    var cors_err = new Error('Browser does not support cross-origin request: ' + options.uri)
+    cors_err.cors = 'unsupported'
+    return options.callback(cors_err, xhr)
+  }
+
+  xhr.timeoutTimer = setTimeout(too_late, options.timeout)
+  function too_late() {
+    timed_out = true
+    var er = new Error('ETIMEDOUT')
+    er.code = 'ETIMEDOUT'
+    er.duration = options.timeout
+
+    request.log.error('Timeout', { 'id':xhr._id, 'milliseconds':options.timeout })
+    return options.callback(er, xhr)
+  }
+
+  // Some states can be skipped over, so remember what is still incomplete.
+  var did = {'response':false, 'loading':false, 'end':false}
+
+  xhr.onreadystatechange = on_state_change
+  xhr.open(options.method, options.uri, true) // asynchronous
+  if(is_cors)
+    xhr.withCredentials = !! options.withCredentials
+  xhr.send(options.body)
+  return xhr
+
+  function on_state_change(event) {
+    if(timed_out)
+      return request.log.debug('Ignoring timed out state change', {'state':xhr.readyState, 'id':xhr.id})
+
+    request.log.debug('State change', {'state':xhr.readyState, 'id':xhr.id, 'timed_out':timed_out})
+
+    if(xhr.readyState === XHR.OPENED) {
+      request.log.debug('Request started', {'id':xhr.id})
+      for (var key in options.headers)
+        xhr.setRequestHeader(key, options.headers[key])
+    }
+
+    else if(xhr.readyState === XHR.HEADERS_RECEIVED)
+      on_response()
+
+    else if(xhr.readyState === XHR.LOADING) {
+      on_response()
+      on_loading()
+    }
+
+    else if(xhr.readyState === XHR.DONE) {
+      on_response()
+      on_loading()
+      on_end()
+    }
+  }
+
+  function on_response() {
+    if(did.response)
+      return
+
+    did.response = true
+    request.log.debug('Got response', {'id':xhr.id, 'status':xhr.status})
+    clearTimeout(xhr.timeoutTimer)
+    xhr.statusCode = xhr.status // Node request compatibility
+
+    // Detect failed CORS requests.
+    if(is_cors && xhr.statusCode == 0) {
+      var cors_err = new Error('CORS request rejected: ' + options.uri)
+      cors_err.cors = 'rejected'
+
+      // Do not process this request further.
+      did.loading = true
+      did.end = true
+
+      return options.callback(cors_err, xhr)
+    }
+
+    options.onResponse(null, xhr)
+  }
+
+  function on_loading() {
+    if(did.loading)
+      return
+
+    did.loading = true
+    request.log.debug('Response body loading', {'id':xhr.id})
+    // TODO: Maybe simulate "data" events by watching xhr.responseText
+  }
+
+  function on_end() {
+    if(did.end)
+      return
+
+    did.end = true
+    request.log.debug('Request done', {'id':xhr.id})
+
+    xhr.body = xhr.responseText
+    if(options.json) {
+      try        { xhr.body = JSON.parse(xhr.responseText) }
+      catch (er) { return options.callback(er, xhr)        }
+    }
+
+    options.callback(null, xhr, xhr.body)
+  }
+
+} // request
+
+request.withCredentials = false;
+request.DEFAULT_TIMEOUT = DEFAULT_TIMEOUT;
+
+//
+// defaults
+//
+
+request.defaults = function(options, requester) {
+  var def = function (method) {
+    var d = function (params, callback) {
+      if(typeof params === 'string')
+        params = {'uri': params};
+      else {
+        params = JSON.parse(JSON.stringify(params));
+      }
+      for (var i in options) {
+        if (params[i] === undefined) params[i] = options[i]
+      }
+      return method(params, callback)
+    }
+    return d
+  }
+  var de = def(request)
+  de.get = def(request.get)
+  de.post = def(request.post)
+  de.put = def(request.put)
+  de.head = def(request.head)
+  return de
+}
+
+//
+// HTTP method shortcuts
+//
+
+var shortcuts = [ 'get', 'put', 'post', 'head' ];
+shortcuts.forEach(function(shortcut) {
+  var method = shortcut.toUpperCase();
+  var func   = shortcut.toLowerCase();
+
+  request[func] = function(opts) {
+    if(typeof opts === 'string')
+      opts = {'method':method, 'uri':opts};
+    else {
+      opts = JSON.parse(JSON.stringify(opts));
+      opts.method = method;
+    }
+
+    var args = [opts].concat(Array.prototype.slice.apply(arguments, [1]));
+    return request.apply(this, args);
+  }
+})
+
+//
+// CouchDB shortcut
+//
+
+request.couch = function(options, callback) {
+  if(typeof options === 'string')
+    options = {'uri':options}
+
+  // Just use the request API to do JSON.
+  options.json = true
+  if(options.body)
+    options.json = options.body
+  delete options.body
+
+  callback = callback || noop
+
+  var xhr = request(options, couch_handler)
+  return xhr
+
+  function couch_handler(er, resp, body) {
+    if(er)
+      return callback(er, resp, body)
+
+    if((resp.statusCode < 200 || resp.statusCode > 299) && body.error) {
+      // The body is a Couch JSON object indicating the error.
+      er = new Error('CouchDB error: ' + (body.error.reason || body.error.error))
+      for (var key in body)
+        er[key] = body[key]
+      return callback(er, resp, body);
+    }
+
+    return callback(er, resp, body);
+  }
+}
+
+//
+// Utility
+//
+
+function noop() {}
+
+function getLogger() {
+  var logger = {}
+    , levels = ['trace', 'debug', 'info', 'warn', 'error']
+    , level, i
+
+  for(i = 0; i < levels.length; i++) {
+    level = levels[i]
+
+    logger[level] = noop
+    if(typeof console !== 'undefined' && console && console[level])
+      logger[level] = formatted(console, level)
+  }
+
+  return logger
+}
+
+function formatted(obj, method) {
+  return formatted_logger
+
+  function formatted_logger(str, context) {
+    if(typeof context === 'object')
+      str += ' ' + JSON.stringify(context)
+
+    return obj[method].call(obj, str)
+  }
+}
+
+// Return whether a URL is a cross-domain request.
+function is_crossDomain(url) {
+  var rurl = /^([\w\+\.\-]+:)(?:\/\/([^\/?#:]*)(?::(\d+))?)?/
+
+  // jQuery #8138, IE may throw an exception when accessing
+  // a field from window.location if document.domain has been set
+  var ajaxLocation
+  try { ajaxLocation = location.href }
+  catch (e) {
+    // Use the href attribute of an A element since IE will modify it given document.location
+    ajaxLocation = document.createElement( "a" );
+    ajaxLocation.href = "";
+    ajaxLocation = ajaxLocation.href;
+  }
+
+  var ajaxLocParts = rurl.exec(ajaxLocation.toLowerCase()) || []
+    , parts = rurl.exec(url.toLowerCase() )
+
+  var result = !!(
+    parts &&
+    (  parts[1] != ajaxLocParts[1]
+    || parts[2] != ajaxLocParts[2]
+    || (parts[3] || (parts[1] === "http:" ? 80 : 443)) != (ajaxLocParts[3] || (ajaxLocParts[1] === "http:" ? 80 : 443))
+    )
+  )
+
+  //console.debug('is_crossDomain('+url+') -> ' + result)
+  return result
+}
+
+// MIT License from http://phpjs.org/functions/base64_encode:358
+function b64_enc (data) {
+    // Encodes string using MIME base64 algorithm
+    var b64 = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=";
+    var o1, o2, o3, h1, h2, h3, h4, bits, i = 0, ac = 0, enc="", tmp_arr = [];
+
+    if (!data) {
+        return data;
+    }
+
+    // assume utf8 data
+    // data = this.utf8_encode(data+'');
+
+    do { // pack three octets into four hexets
+        o1 = data.charCodeAt(i++);
+        o2 = data.charCodeAt(i++);
+        o3 = data.charCodeAt(i++);
+
+        bits = o1<<16 | o2<<8 | o3;
+
+        h1 = bits>>18 & 0x3f;
+        h2 = bits>>12 & 0x3f;
+        h3 = bits>>6 & 0x3f;
+        h4 = bits & 0x3f;
+
+        // use hexets to index into b64, and append result to encoded string
+        tmp_arr[ac++] = b64.charAt(h1) + b64.charAt(h2) + b64.charAt(h3) + b64.charAt(h4);
+    } while (i < data.length);
+
+    enc = tmp_arr.join('');
+
+    switch (data.length % 3) {
+        case 1:
+            enc = enc.slice(0, -2) + '==';
+        break;
+        case 2:
+            enc = enc.slice(0, -1) + '=';
+        break;
+    }
+
+    return enc;
+}
+
+},{}],3:[function(require,module,exports){
+var process=require("__browserify_process");/** @license MIT License (c) copyright 2011-2013 original author or authors */
+
+/**
+ * A lightweight CommonJS Promises/A and when() implementation
+ * when is part of the cujo.js family of libraries (http://cujojs.com/)
+ *
+ * Licensed under the MIT License at:
+ * http://www.opensource.org/licenses/mit-license.php
+ *
+ * @author Brian Cavalier
+ * @author John Hann
+ * @version 2.7.1
+ */
+(function(define) { 'use strict';
+define(function (require) {
+
+	// Public API
+
+	when.promise   = promise;    // Create a pending promise
+	when.resolve   = resolve;    // Create a resolved promise
+	when.reject    = reject;     // Create a rejected promise
+	when.defer     = defer;      // Create a {promise, resolver} pair
+
+	when.join      = join;       // Join 2 or more promises
+
+	when.all       = all;        // Resolve a list of promises
+	when.map       = map;        // Array.map() for promises
+	when.reduce    = reduce;     // Array.reduce() for promises
+	when.settle    = settle;     // Settle a list of promises
+
+	when.any       = any;        // One-winner race
+	when.some      = some;       // Multi-winner race
+
+	when.isPromise = isPromiseLike;  // DEPRECATED: use isPromiseLike
+	when.isPromiseLike = isPromiseLike; // Is something promise-like, aka thenable
+
+	/**
+	 * Register an observer for a promise or immediate value.
+	 *
+	 * @param {*} promiseOrValue
+	 * @param {function?} [onFulfilled] callback to be called when promiseOrValue is
+	 *   successfully fulfilled.  If promiseOrValue is an immediate value, callback
+	 *   will be invoked immediately.
+	 * @param {function?} [onRejected] callback to be called when promiseOrValue is
+	 *   rejected.
+	 * @param {function?} [onProgress] callback to be called when progress updates
+	 *   are issued for promiseOrValue.
+	 * @returns {Promise} a new {@link Promise} that will complete with the return
+	 *   value of callback or errback or the completion value of promiseOrValue if
+	 *   callback and/or errback is not supplied.
+	 */
+	function when(promiseOrValue, onFulfilled, onRejected, onProgress) {
+		// Get a trusted promise for the input promiseOrValue, and then
+		// register promise handlers
+		return cast(promiseOrValue).then(onFulfilled, onRejected, onProgress);
+	}
+
+	/**
+	 * Creates a new promise whose fate is determined by resolver.
+	 * @param {function} resolver function(resolve, reject, notify)
+	 * @returns {Promise} promise whose fate is determine by resolver
+	 */
+	function promise(resolver) {
+		return new Promise(resolver,
+			monitorApi.PromiseStatus && monitorApi.PromiseStatus());
+	}
+
+	/**
+	 * Trusted Promise constructor.  A Promise created from this constructor is
+	 * a trusted when.js promise.  Any other duck-typed promise is considered
+	 * untrusted.
+	 * @constructor
+	 * @returns {Promise} promise whose fate is determine by resolver
+	 * @name Promise
+	 */
+	function Promise(resolver, status) {
+		var self, value, consumers = [];
+
+		self = this;
+		this._status = status;
+		this.inspect = inspect;
+		this._when = _when;
+
+		// Call the provider resolver to seal the promise's fate
+		try {
+			resolver(promiseResolve, promiseReject, promiseNotify);
+		} catch(e) {
+			promiseReject(e);
 		}
 
-		// serialize data?
-		if (typeof data !== 'string') {
-			var serialized = [];
-			for (var datum in data) {
-				serialized.push(datum + '=' + data[datum]);
+		/**
+		 * Returns a snapshot of this promise's current status at the instant of call
+		 * @returns {{state:String}}
+		 */
+		function inspect() {
+			return value ? value.inspect() : toPendingState();
+		}
+
+		/**
+		 * Private message delivery. Queues and delivers messages to
+		 * the promise's ultimate fulfillment value or rejection reason.
+		 * @private
+		 */
+		function _when(resolve, notify, onFulfilled, onRejected, onProgress) {
+			consumers ? consumers.push(deliver) : enqueue(function() { deliver(value); });
+
+			function deliver(p) {
+				p._when(resolve, notify, onFulfilled, onRejected, onProgress);
 			}
-			data = serialized.join('&');
 		}
 
-		// set timeout
-		if ('ontimeout' in req) {
-			req.ontimeout = +options.timeout || 0;
+		/**
+		 * Transition from pre-resolution state to post-resolution state, notifying
+		 * all listeners of the ultimate fulfillment or rejection
+		 * @param {*} val resolution value
+		 */
+		function promiseResolve(val) {
+			if(!consumers) {
+				return;
+			}
+
+			var queue = consumers;
+			consumers = undef;
+
+			enqueue(function () {
+				value = coerce(self, val);
+				if(status) {
+					updateStatus(value, status);
+				}
+				runHandlers(queue, value);
+			});
 		}
 
-		// listen for XHR events
-		req.onload = function () {
-			complete(req.responseText, req.status);
-			success(req.responseText);
-		};
-		req.onerror = function () {
-			complete(req.responseText);
-			error(req.responseText, req.status);
-		};
-
-		// open connection
-		req.open(method, (method === 'GET' && data ? url+'?'+data : url), !sync);
-
-		// set headers
-		for (var header in headers) {
-			req.setRequestHeader(header, headers[header]);
+		/**
+		 * Reject this promise with the supplied reason, which will be used verbatim.
+		 * @param {*} reason reason for the rejection
+		 */
+		function promiseReject(reason) {
+			promiseResolve(new RejectedPromise(reason));
 		}
 
-		// send it
-		req.send(method !== 'GET' ? data : null);
+		/**
+		 * Issue a progress event, notifying all progress listeners
+		 * @param {*} update progress event payload to pass to all listeners
+		 */
+		function promiseNotify(update) {
+			if(consumers) {
+				var queue = consumers;
+				enqueue(function () {
+					runHandlers(queue, new ProgressingPromise(update));
+				});
+			}
+		}
+	}
 
-		return req;
+	promisePrototype = Promise.prototype;
+
+	/**
+	 * Register handlers for this promise.
+	 * @param [onFulfilled] {Function} fulfillment handler
+	 * @param [onRejected] {Function} rejection handler
+	 * @param [onProgress] {Function} progress handler
+	 * @return {Promise} new Promise
+	 */
+	promisePrototype.then = function(onFulfilled, onRejected, onProgress) {
+		var self = this;
+
+		return new Promise(function(resolve, reject, notify) {
+			self._when(resolve, notify, onFulfilled, onRejected, onProgress);
+		}, this._status && this._status.observed());
 	};
 
-}));
+	/**
+	 * Register a rejection handler.  Shortcut for .then(undefined, onRejected)
+	 * @param {function?} onRejected
+	 * @return {Promise}
+	 */
+	promisePrototype['catch'] = promisePrototype.otherwise = function(onRejected) {
+		return this.then(undef, onRejected);
+	};
+
+	/**
+	 * Ensures that onFulfilledOrRejected will be called regardless of whether
+	 * this promise is fulfilled or rejected.  onFulfilledOrRejected WILL NOT
+	 * receive the promises' value or reason.  Any returned value will be disregarded.
+	 * onFulfilledOrRejected may throw or return a rejected promise to signal
+	 * an additional error.
+	 * @param {function} onFulfilledOrRejected handler to be called regardless of
+	 *  fulfillment or rejection
+	 * @returns {Promise}
+	 */
+	promisePrototype['finally'] = promisePrototype.ensure = function(onFulfilledOrRejected) {
+		return typeof onFulfilledOrRejected === 'function'
+			? this.then(injectHandler, injectHandler)['yield'](this)
+			: this;
+
+		function injectHandler() {
+			return resolve(onFulfilledOrRejected());
+		}
+	};
+
+	/**
+	 * Terminate a promise chain by handling the ultimate fulfillment value or
+	 * rejection reason, and assuming responsibility for all errors.  if an
+	 * error propagates out of handleResult or handleFatalError, it will be
+	 * rethrown to the host, resulting in a loud stack track on most platforms
+	 * and a crash on some.
+	 * @param {function?} handleResult
+	 * @param {function?} handleError
+	 * @returns {undefined}
+	 */
+	promisePrototype.done = function(handleResult, handleError) {
+		this.then(handleResult, handleError)['catch'](crash);
+	};
+
+	/**
+	 * Shortcut for .then(function() { return value; })
+	 * @param  {*} value
+	 * @return {Promise} a promise that:
+	 *  - is fulfilled if value is not a promise, or
+	 *  - if value is a promise, will fulfill with its value, or reject
+	 *    with its reason.
+	 */
+	promisePrototype['yield'] = function(value) {
+		return this.then(function() {
+			return value;
+		});
+	};
+
+	/**
+	 * Runs a side effect when this promise fulfills, without changing the
+	 * fulfillment value.
+	 * @param {function} onFulfilledSideEffect
+	 * @returns {Promise}
+	 */
+	promisePrototype.tap = function(onFulfilledSideEffect) {
+		return this.then(onFulfilledSideEffect)['yield'](this);
+	};
+
+	/**
+	 * Assumes that this promise will fulfill with an array, and arranges
+	 * for the onFulfilled to be called with the array as its argument list
+	 * i.e. onFulfilled.apply(undefined, array).
+	 * @param {function} onFulfilled function to receive spread arguments
+	 * @return {Promise}
+	 */
+	promisePrototype.spread = function(onFulfilled) {
+		return this.then(function(array) {
+			// array may contain promises, so resolve its contents.
+			return all(array, function(array) {
+				return onFulfilled.apply(undef, array);
+			});
+		});
+	};
+
+	/**
+	 * Shortcut for .then(onFulfilledOrRejected, onFulfilledOrRejected)
+	 * @deprecated
+	 */
+	promisePrototype.always = function(onFulfilledOrRejected, onProgress) {
+		return this.then(onFulfilledOrRejected, onFulfilledOrRejected, onProgress);
+	};
+
+	/**
+	 * Casts x to a trusted promise. If x is already a trusted promise, it is
+	 * returned, otherwise a new trusted Promise which follows x is returned.
+	 * @param {*} x
+	 * @returns {Promise}
+	 */
+	function cast(x) {
+		return x instanceof Promise ? x : resolve(x);
+	}
+
+	/**
+	 * Returns a resolved promise. The returned promise will be
+	 *  - fulfilled with promiseOrValue if it is a value, or
+	 *  - if promiseOrValue is a promise
+	 *    - fulfilled with promiseOrValue's value after it is fulfilled
+	 *    - rejected with promiseOrValue's reason after it is rejected
+	 * In contract to cast(x), this always creates a new Promise
+	 * @param  {*} value
+	 * @return {Promise}
+	 */
+	function resolve(value) {
+		return promise(function(resolve) {
+			resolve(value);
+		});
+	}
+
+	/**
+	 * Returns a rejected promise for the supplied promiseOrValue.  The returned
+	 * promise will be rejected with:
+	 * - promiseOrValue, if it is a value, or
+	 * - if promiseOrValue is a promise
+	 *   - promiseOrValue's value after it is fulfilled
+	 *   - promiseOrValue's reason after it is rejected
+	 * @param {*} promiseOrValue the rejected value of the returned {@link Promise}
+	 * @return {Promise} rejected {@link Promise}
+	 */
+	function reject(promiseOrValue) {
+		return when(promiseOrValue, function(e) {
+			return new RejectedPromise(e);
+		});
+	}
+
+	/**
+	 * Creates a {promise, resolver} pair, either or both of which
+	 * may be given out safely to consumers.
+	 * The resolver has resolve, reject, and progress.  The promise
+	 * has then plus extended promise API.
+	 *
+	 * @return {{
+	 * promise: Promise,
+	 * resolve: function:Promise,
+	 * reject: function:Promise,
+	 * notify: function:Promise
+	 * resolver: {
+	 *	resolve: function:Promise,
+	 *	reject: function:Promise,
+	 *	notify: function:Promise
+	 * }}}
+	 */
+	function defer() {
+		var deferred, pending, resolved;
+
+		// Optimize object shape
+		deferred = {
+			promise: undef, resolve: undef, reject: undef, notify: undef,
+			resolver: { resolve: undef, reject: undef, notify: undef }
+		};
+
+		deferred.promise = pending = promise(makeDeferred);
+
+		return deferred;
+
+		function makeDeferred(resolvePending, rejectPending, notifyPending) {
+			deferred.resolve = deferred.resolver.resolve = function(value) {
+				if(resolved) {
+					return resolve(value);
+				}
+				resolved = true;
+				resolvePending(value);
+				return pending;
+			};
+
+			deferred.reject  = deferred.resolver.reject  = function(reason) {
+				if(resolved) {
+					return resolve(new RejectedPromise(reason));
+				}
+				resolved = true;
+				rejectPending(reason);
+				return pending;
+			};
+
+			deferred.notify  = deferred.resolver.notify  = function(update) {
+				notifyPending(update);
+				return update;
+			};
+		}
+	}
+
+	/**
+	 * Run a queue of functions as quickly as possible, passing
+	 * value to each.
+	 */
+	function runHandlers(queue, value) {
+		for (var i = 0; i < queue.length; i++) {
+			queue[i](value);
+		}
+	}
+
+	/**
+	 * Coerces x to a trusted Promise
+	 * @param {*} x thing to coerce
+	 * @returns {*} Guaranteed to return a trusted Promise.  If x
+	 *   is trusted, returns x, otherwise, returns a new, trusted, already-resolved
+	 *   Promise whose resolution value is:
+	 *   * the resolution value of x if it's a foreign promise, or
+	 *   * x if it's a value
+	 */
+	function coerce(self, x) {
+		if (x === self) {
+			return new RejectedPromise(new TypeError());
+		}
+
+		if (x instanceof Promise) {
+			return x;
+		}
+
+		try {
+			var untrustedThen = x === Object(x) && x.then;
+
+			return typeof untrustedThen === 'function'
+				? assimilate(untrustedThen, x)
+				: new FulfilledPromise(x);
+		} catch(e) {
+			return new RejectedPromise(e);
+		}
+	}
+
+	/**
+	 * Safely assimilates a foreign thenable by wrapping it in a trusted promise
+	 * @param {function} untrustedThen x's then() method
+	 * @param {object|function} x thenable
+	 * @returns {Promise}
+	 */
+	function assimilate(untrustedThen, x) {
+		return promise(function (resolve, reject) {
+			fcall(untrustedThen, x, resolve, reject);
+		});
+	}
+
+	makePromisePrototype = Object.create ||
+		function(o) {
+			function PromisePrototype() {}
+			PromisePrototype.prototype = o;
+			return new PromisePrototype();
+		};
+
+	/**
+	 * Creates a fulfilled, local promise as a proxy for a value
+	 * NOTE: must never be exposed
+	 * @private
+	 * @param {*} value fulfillment value
+	 * @returns {Promise}
+	 */
+	function FulfilledPromise(value) {
+		this.value = value;
+	}
+
+	FulfilledPromise.prototype = makePromisePrototype(promisePrototype);
+
+	FulfilledPromise.prototype.inspect = function() {
+		return toFulfilledState(this.value);
+	};
+
+	FulfilledPromise.prototype._when = function(resolve, _, onFulfilled) {
+		try {
+			resolve(typeof onFulfilled === 'function' ? onFulfilled(this.value) : this.value);
+		} catch(e) {
+			resolve(new RejectedPromise(e));
+		}
+	};
+
+	/**
+	 * Creates a rejected, local promise as a proxy for a value
+	 * NOTE: must never be exposed
+	 * @private
+	 * @param {*} reason rejection reason
+	 * @returns {Promise}
+	 */
+	function RejectedPromise(reason) {
+		this.value = reason;
+	}
+
+	RejectedPromise.prototype = makePromisePrototype(promisePrototype);
+
+	RejectedPromise.prototype.inspect = function() {
+		return toRejectedState(this.value);
+	};
+
+	RejectedPromise.prototype._when = function(resolve, _, __, onRejected) {
+		try {
+			resolve(typeof onRejected === 'function' ? onRejected(this.value) : this);
+		} catch(e) {
+			resolve(new RejectedPromise(e));
+		}
+	};
+
+	/**
+	 * Create a progress promise with the supplied update.
+	 * @private
+	 * @param {*} value progress update value
+	 * @return {Promise} progress promise
+	 */
+	function ProgressingPromise(value) {
+		this.value = value;
+	}
+
+	ProgressingPromise.prototype = makePromisePrototype(promisePrototype);
+
+	ProgressingPromise.prototype._when = function(_, notify, f, r, u) {
+		try {
+			notify(typeof u === 'function' ? u(this.value) : this.value);
+		} catch(e) {
+			notify(e);
+		}
+	};
+
+	/**
+	 * Update a PromiseStatus monitor object with the outcome
+	 * of the supplied value promise.
+	 * @param {Promise} value
+	 * @param {PromiseStatus} status
+	 */
+	function updateStatus(value, status) {
+		value.then(statusFulfilled, statusRejected);
+
+		function statusFulfilled() { status.fulfilled(); }
+		function statusRejected(r) { status.rejected(r); }
+	}
+
+	/**
+	 * Determines if x is promise-like, i.e. a thenable object
+	 * NOTE: Will return true for *any thenable object*, and isn't truly
+	 * safe, since it may attempt to access the `then` property of x (i.e.
+	 *  clever/malicious getters may do weird things)
+	 * @param {*} x anything
+	 * @returns {boolean} true if x is promise-like
+	 */
+	function isPromiseLike(x) {
+		return x && typeof x.then === 'function';
+	}
+
+	/**
+	 * Initiates a competitive race, returning a promise that will resolve when
+	 * howMany of the supplied promisesOrValues have resolved, or will reject when
+	 * it becomes impossible for howMany to resolve, for example, when
+	 * (promisesOrValues.length - howMany) + 1 input promises reject.
+	 *
+	 * @param {Array} promisesOrValues array of anything, may contain a mix
+	 *      of promises and values
+	 * @param howMany {number} number of promisesOrValues to resolve
+	 * @param {function?} [onFulfilled] DEPRECATED, use returnedPromise.then()
+	 * @param {function?} [onRejected] DEPRECATED, use returnedPromise.then()
+	 * @param {function?} [onProgress] DEPRECATED, use returnedPromise.then()
+	 * @returns {Promise} promise that will resolve to an array of howMany values that
+	 *  resolved first, or will reject with an array of
+	 *  (promisesOrValues.length - howMany) + 1 rejection reasons.
+	 */
+	function some(promisesOrValues, howMany, onFulfilled, onRejected, onProgress) {
+
+		return when(promisesOrValues, function(promisesOrValues) {
+
+			return promise(resolveSome).then(onFulfilled, onRejected, onProgress);
+
+			function resolveSome(resolve, reject, notify) {
+				var toResolve, toReject, values, reasons, fulfillOne, rejectOne, len, i;
+
+				len = promisesOrValues.length >>> 0;
+
+				toResolve = Math.max(0, Math.min(howMany, len));
+				values = [];
+
+				toReject = (len - toResolve) + 1;
+				reasons = [];
+
+				// No items in the input, resolve immediately
+				if (!toResolve) {
+					resolve(values);
+
+				} else {
+					rejectOne = function(reason) {
+						reasons.push(reason);
+						if(!--toReject) {
+							fulfillOne = rejectOne = identity;
+							reject(reasons);
+						}
+					};
+
+					fulfillOne = function(val) {
+						// This orders the values based on promise resolution order
+						values.push(val);
+						if (!--toResolve) {
+							fulfillOne = rejectOne = identity;
+							resolve(values);
+						}
+					};
+
+					for(i = 0; i < len; ++i) {
+						if(i in promisesOrValues) {
+							when(promisesOrValues[i], fulfiller, rejecter, notify);
+						}
+					}
+				}
+
+				function rejecter(reason) {
+					rejectOne(reason);
+				}
+
+				function fulfiller(val) {
+					fulfillOne(val);
+				}
+			}
+		});
+	}
+
+	/**
+	 * Initiates a competitive race, returning a promise that will resolve when
+	 * any one of the supplied promisesOrValues has resolved or will reject when
+	 * *all* promisesOrValues have rejected.
+	 *
+	 * @param {Array|Promise} promisesOrValues array of anything, may contain a mix
+	 *      of {@link Promise}s and values
+	 * @param {function?} [onFulfilled] DEPRECATED, use returnedPromise.then()
+	 * @param {function?} [onRejected] DEPRECATED, use returnedPromise.then()
+	 * @param {function?} [onProgress] DEPRECATED, use returnedPromise.then()
+	 * @returns {Promise} promise that will resolve to the value that resolved first, or
+	 * will reject with an array of all rejected inputs.
+	 */
+	function any(promisesOrValues, onFulfilled, onRejected, onProgress) {
+
+		function unwrapSingleResult(val) {
+			return onFulfilled ? onFulfilled(val[0]) : val[0];
+		}
+
+		return some(promisesOrValues, 1, unwrapSingleResult, onRejected, onProgress);
+	}
+
+	/**
+	 * Return a promise that will resolve only once all the supplied promisesOrValues
+	 * have resolved. The resolution value of the returned promise will be an array
+	 * containing the resolution values of each of the promisesOrValues.
+	 * @memberOf when
+	 *
+	 * @param {Array|Promise} promisesOrValues array of anything, may contain a mix
+	 *      of {@link Promise}s and values
+	 * @param {function?} [onFulfilled] DEPRECATED, use returnedPromise.then()
+	 * @param {function?} [onRejected] DEPRECATED, use returnedPromise.then()
+	 * @param {function?} [onProgress] DEPRECATED, use returnedPromise.then()
+	 * @returns {Promise}
+	 */
+	function all(promisesOrValues, onFulfilled, onRejected, onProgress) {
+		return _map(promisesOrValues, identity).then(onFulfilled, onRejected, onProgress);
+	}
+
+	/**
+	 * Joins multiple promises into a single returned promise.
+	 * @return {Promise} a promise that will fulfill when *all* the input promises
+	 * have fulfilled, or will reject when *any one* of the input promises rejects.
+	 */
+	function join(/* ...promises */) {
+		return _map(arguments, identity);
+	}
+
+	/**
+	 * Settles all input promises such that they are guaranteed not to
+	 * be pending once the returned promise fulfills. The returned promise
+	 * will always fulfill, except in the case where `array` is a promise
+	 * that rejects.
+	 * @param {Array|Promise} array or promise for array of promises to settle
+	 * @returns {Promise} promise that always fulfills with an array of
+	 *  outcome snapshots for each input promise.
+	 */
+	function settle(array) {
+		return _map(array, toFulfilledState, toRejectedState);
+	}
+
+	/**
+	 * Promise-aware array map function, similar to `Array.prototype.map()`,
+	 * but input array may contain promises or values.
+	 * @param {Array|Promise} array array of anything, may contain promises and values
+	 * @param {function} mapFunc map function which may return a promise or value
+	 * @returns {Promise} promise that will fulfill with an array of mapped values
+	 *  or reject if any input promise rejects.
+	 */
+	function map(array, mapFunc) {
+		return _map(array, mapFunc);
+	}
+
+	/**
+	 * Internal map that allows a fallback to handle rejections
+	 * @param {Array|Promise} array array of anything, may contain promises and values
+	 * @param {function} mapFunc map function which may return a promise or value
+	 * @param {function?} fallback function to handle rejected promises
+	 * @returns {Promise} promise that will fulfill with an array of mapped values
+	 *  or reject if any input promise rejects.
+	 */
+	function _map(array, mapFunc, fallback) {
+		return when(array, function(array) {
+
+			return new Promise(resolveMap);
+
+			function resolveMap(resolve, reject, notify) {
+				var results, len, toResolve, i;
+
+				// Since we know the resulting length, we can preallocate the results
+				// array to avoid array expansions.
+				toResolve = len = array.length >>> 0;
+				results = [];
+
+				if(!toResolve) {
+					resolve(results);
+					return;
+				}
+
+				// Since mapFunc may be async, get all invocations of it into flight
+				for(i = 0; i < len; i++) {
+					if(i in array) {
+						resolveOne(array[i], i);
+					} else {
+						--toResolve;
+					}
+				}
+
+				function resolveOne(item, i) {
+					when(item, mapFunc, fallback).then(function(mapped) {
+						results[i] = mapped;
+
+						if(!--toResolve) {
+							resolve(results);
+						}
+					}, reject, notify);
+				}
+			}
+		});
+	}
+
+	/**
+	 * Traditional reduce function, similar to `Array.prototype.reduce()`, but
+	 * input may contain promises and/or values, and reduceFunc
+	 * may return either a value or a promise, *and* initialValue may
+	 * be a promise for the starting value.
+	 *
+	 * @param {Array|Promise} promise array or promise for an array of anything,
+	 *      may contain a mix of promises and values.
+	 * @param {function} reduceFunc reduce function reduce(currentValue, nextValue, index, total),
+	 *      where total is the total number of items being reduced, and will be the same
+	 *      in each call to reduceFunc.
+	 * @returns {Promise} that will resolve to the final reduced value
+	 */
+	function reduce(promise, reduceFunc /*, initialValue */) {
+		var args = fcall(slice, arguments, 1);
+
+		return when(promise, function(array) {
+			var total;
+
+			total = array.length;
+
+			// Wrap the supplied reduceFunc with one that handles promises and then
+			// delegates to the supplied.
+			args[0] = function (current, val, i) {
+				return when(current, function (c) {
+					return when(val, function (value) {
+						return reduceFunc(c, value, i, total);
+					});
+				});
+			};
+
+			return reduceArray.apply(array, args);
+		});
+	}
+
+	// Snapshot states
+
+	/**
+	 * Creates a fulfilled state snapshot
+	 * @private
+	 * @param {*} x any value
+	 * @returns {{state:'fulfilled',value:*}}
+	 */
+	function toFulfilledState(x) {
+		return { state: 'fulfilled', value: x };
+	}
+
+	/**
+	 * Creates a rejected state snapshot
+	 * @private
+	 * @param {*} x any reason
+	 * @returns {{state:'rejected',reason:*}}
+	 */
+	function toRejectedState(x) {
+		return { state: 'rejected', reason: x };
+	}
+
+	/**
+	 * Creates a pending state snapshot
+	 * @private
+	 * @returns {{state:'pending'}}
+	 */
+	function toPendingState() {
+		return { state: 'pending' };
+	}
+
+	//
+	// Internals, utilities, etc.
+	//
+
+	var promisePrototype, makePromisePrototype, reduceArray, slice, fcall, nextTick, handlerQueue,
+		funcProto, call, arrayProto, monitorApi,
+		capturedSetTimeout, cjsRequire, MutationObs, undef;
+
+	cjsRequire = require;
+
+	//
+	// Shared handler queue processing
+	//
+	// Credit to Twisol (https://github.com/Twisol) for suggesting
+	// this type of extensible queue + trampoline approach for
+	// next-tick conflation.
+
+	handlerQueue = [];
+
+	/**
+	 * Enqueue a task. If the queue is not currently scheduled to be
+	 * drained, schedule it.
+	 * @param {function} task
+	 */
+	function enqueue(task) {
+		if(handlerQueue.push(task) === 1) {
+			nextTick(drainQueue);
+		}
+	}
+
+	/**
+	 * Drain the handler queue entirely, being careful to allow the
+	 * queue to be extended while it is being processed, and to continue
+	 * processing until it is truly empty.
+	 */
+	function drainQueue() {
+		runHandlers(handlerQueue);
+		handlerQueue = [];
+	}
+
+	// Allow attaching the monitor to when() if env has no console
+	monitorApi = typeof console !== 'undefined' ? console : when;
+
+	// Sniff "best" async scheduling option
+	// Prefer process.nextTick or MutationObserver, then check for
+	// vertx and finally fall back to setTimeout
+	/*global process,document,setTimeout,MutationObserver,WebKitMutationObserver*/
+	if (typeof process === 'object' && process.nextTick) {
+		nextTick = process.nextTick;
+	} else if(MutationObs =
+		(typeof MutationObserver === 'function' && MutationObserver) ||
+			(typeof WebKitMutationObserver === 'function' && WebKitMutationObserver)) {
+		nextTick = (function(document, MutationObserver, drainQueue) {
+			var el = document.createElement('div');
+			new MutationObserver(drainQueue).observe(el, { attributes: true });
+
+			return function() {
+				el.setAttribute('x', 'x');
+			};
+		}(document, MutationObs, drainQueue));
+	} else {
+		try {
+			// vert.x 1.x || 2.x
+			nextTick = cjsRequire('vertx').runOnLoop || cjsRequire('vertx').runOnContext;
+		} catch(ignore) {
+			// capture setTimeout to avoid being caught by fake timers
+			// used in time based tests
+			capturedSetTimeout = setTimeout;
+			nextTick = function(t) { capturedSetTimeout(t, 0); };
+		}
+	}
+
+	//
+	// Capture/polyfill function and array utils
+	//
+
+	// Safe function calls
+	funcProto = Function.prototype;
+	call = funcProto.call;
+	fcall = funcProto.bind
+		? call.bind(call)
+		: function(f, context) {
+			return f.apply(context, slice.call(arguments, 2));
+		};
+
+	// Safe array ops
+	arrayProto = [];
+	slice = arrayProto.slice;
+
+	// ES5 reduce implementation if native not available
+	// See: http://es5.github.com/#x15.4.4.21 as there are many
+	// specifics and edge cases.  ES5 dictates that reduce.length === 1
+	// This implementation deviates from ES5 spec in the following ways:
+	// 1. It does not check if reduceFunc is a Callable
+	reduceArray = arrayProto.reduce ||
+		function(reduceFunc /*, initialValue */) {
+			/*jshint maxcomplexity: 7*/
+			var arr, args, reduced, len, i;
+
+			i = 0;
+			arr = Object(this);
+			len = arr.length >>> 0;
+			args = arguments;
+
+			// If no initialValue, use first item of array (we know length !== 0 here)
+			// and adjust i to start at second item
+			if(args.length <= 1) {
+				// Skip to the first real element in the array
+				for(;;) {
+					if(i in arr) {
+						reduced = arr[i++];
+						break;
+					}
+
+					// If we reached the end of the array without finding any real
+					// elements, it's a TypeError
+					if(++i >= len) {
+						throw new TypeError();
+					}
+				}
+			} else {
+				// If initialValue provided, use it
+				reduced = args[1];
+			}
+
+			// Do the actual reduce
+			for(;i < len; ++i) {
+				if(i in arr) {
+					reduced = reduceFunc(reduced, arr[i], i, arr);
+				}
+			}
+
+			return reduced;
+		};
+
+	function identity(x) {
+		return x;
+	}
+
+	function crash(fatalError) {
+		if(typeof monitorApi.reportUnhandled === 'function') {
+			monitorApi.reportUnhandled();
+		} else {
+			enqueue(function() {
+				throw fatalError;
+			});
+		}
+
+		throw fatalError;
+	}
+
+	return when;
+});
+})(typeof define === 'function' && define.amd ? define : function (factory) { module.exports = factory(require); });
+
+},{"__browserify_process":4}],4:[function(require,module,exports){
+// shim for using process in browser
+
+var process = module.exports = {};
+
+process.nextTick = (function () {
+    var canSetImmediate = typeof window !== 'undefined'
+    && window.setImmediate;
+    var canPost = typeof window !== 'undefined'
+    && window.postMessage && window.addEventListener
+    ;
+
+    if (canSetImmediate) {
+        return function (f) { return window.setImmediate(f) };
+    }
+
+    if (canPost) {
+        var queue = [];
+        window.addEventListener('message', function (ev) {
+            if (ev.source === window && ev.data === 'process-tick') {
+                ev.stopPropagation();
+                if (queue.length > 0) {
+                    var fn = queue.shift();
+                    fn();
+                }
+            }
+        }, true);
+
+        return function nextTick(fn) {
+            queue.push(fn);
+            window.postMessage('process-tick', '*');
+        };
+    }
+
+    return function nextTick(fn) {
+        setTimeout(fn, 0);
+    };
+})();
+
+process.title = 'browser';
+process.browser = true;
+process.env = {};
+process.argv = [];
+
+process.binding = function (name) {
+    throw new Error('process.binding is not supported');
+}
+
+// TODO(shtylman)
+process.cwd = function () { return '/' };
+process.chdir = function (dir) {
+    throw new Error('process.chdir is not supported');
+};
 
 },{}]},{},[1])
 ;

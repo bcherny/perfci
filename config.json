@@ -4,5 +4,9 @@
 		"host": "127.0.0.1",
 		"port": 5984,
 		"view": "runs"
+	},
+	"http": {
+		"host": "http://localhost",
+		"port": 1234
 	}
 }

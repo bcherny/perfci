@@ -1,16 +1,37 @@
 ;(function(){
 	"use strict";
 
-	var config = {
-		url: 'localhost:1234'
-	};
+	var request = require('browser-request'),
+		when = require('when');
 
-	var uxhr = require('uxhr');
+	load('config.json').then(function (config) {
 
-	uxhr(config.url, {}, {
-		complete: function (res) {
-			console.log('complete', res);
-		}
+		load(config.http.host + ':' + config.http.port).then(function (data) {
+			console.log(data);
+		}, function (err) {
+			throw err;
+		});
+
+	}, function (err) {
+		throw err;
 	});
+
+	// helpers
+
+	function load (url) {
+
+		var deferred = when.defer();
+
+		request(url, function (err, res) {
+
+			if (err) deferred.reject(err);
+			
+			deferred.resolve(JSON.parse(res.body));
+
+		});
+
+		return deferred.promise;
+
+	}
 
 })();
