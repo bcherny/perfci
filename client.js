@@ -28,9 +28,11 @@
 
 	function render (data) {
 
-		document.body.innerHTML =
-			'<p>count: ' + data.length + '</p>'
-		  + json2html(data);
+		document
+		.querySelector('#app')
+		.innerHTML =
+			'<p id="count">count: ' + data.length + '</p>' +
+			'<div id="json">' + json2html(data) + '</div>';
 
 	}
 
