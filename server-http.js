@@ -7,28 +7,29 @@
 		cors = require('koa-cors'),
 		when = require('when');
 
-	module.exports = function (db) {
+	function start (opts) {
 
 		// init server
-
-		koa()
+		(module.exports.server = koa())
 
 		// allow cross-origin
-		
 		.use(cors())
 
 		// middleware
-		
 		.use(function *() {
 
-			this.body = yield read(db);
+			this.body = yield read(opts.db);
 
 		})
 
 		// start server!
-
 		.listen(config.http.port);
 
+	}
+
+	module.exports = {
+		server: null,
+		start: start
 	};
 
 

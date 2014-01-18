@@ -2,7 +2,9 @@
 	"use strict";
 
 	var config = require('cat-settings').loadSync(__dirname + '/config.json'),
-		cradle = require('cradle');
+		cradle = require('cradle'),
+		http = require('./server-http'),
+		socket = require('./server-socket');
 
 	// database
 	var db = new cradle
@@ -10,9 +12,13 @@
 		.database(config.db.database);
 
 	// http server
-	require('./server-http')(db);
+	http.start({
+		db: db
+	});
 
 	// socket server
-	require('./server-socket')();
+	socket.start({
+		server: http.server
+	});
 
 })();

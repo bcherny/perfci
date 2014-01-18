@@ -1,22 +1,42 @@
 ;(function(){
 	"use strict";
 
-	var request = require('browser-request'),
+	var json2html = require('json-to-html'),
+		request = require('browser-request'),
+		io = require('socket.io/node_modules/socket.io-client'),
 		when = require('when');
 
-	load('config.json').then(function (config) {
-
-		load(config.http.host + ':' + config.http.port).then(function (data) {
-			console.log(data);
-		}, function (err) {
-			throw err;
-		});
-
-	}, function (err) {
+	load('config.json').then(init, function (err) {
 		throw err;
 	});
 
+	function init (config) {
+
+		// fetch data
+		load(config.http.host + ':' + config.http.port).then(render, error);
+
+		// open socket
+		var socket = io.connect(config.socket.host + ':' + config.socket.port);
+
+		socket.on('hello', function (data) {
+			console.log('sock: ', data);
+		});
+
+	}
+
 	// helpers
+
+	function render (data) {
+
+		document.body.innerHTML =
+			'<p>count: ' + data.length + '</p>'
+		  + json2html(data);
+
+	}
+
+	function error (err) {
+		throw err;
+	}
 
 	function load (url) {
 
@@ -25,7 +45,7 @@
 		request(url, function (err, res) {
 
 			if (err) deferred.reject(err);
-			
+
 			deferred.resolve(JSON.parse(res.body));
 
 		});
