@@ -18,12 +18,17 @@
 		// middleware
 		.use(function *() {
 
-			this.body = yield read(opts.db);
+			this.body = yield read(opts);
 
 		})
 
 		// start server!
 		.listen(config.http.port);
+
+		// log
+		if (config.debug) {
+			console.info('Started HTTP server on port ' + config.http.port);
+		}
 
 	}
 
@@ -56,17 +61,13 @@
 
 	}
 
-	function read (db) {
+	function read (opts) {
 
-		return query(db).then(function (data) {
+		return query(opts.db).then(function (data) {
 
 			return data;
 
-		}, function (err) {
-
-			return err;
-
-		});
+		}, opts.error);
 
 	}
 

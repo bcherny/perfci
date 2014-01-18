@@ -26,10 +26,35 @@
 			// .on('disconnect', function () {
 
 			// });
+			
+			// db change events
+			
+			var feed = opts.db.changes();
+
+			feed
+			.on('change', function (change) {
+
+				opts.db.view('runs/list', { id: change.id }, function (err, doc) {
+
+					if (err) {
+						opts.error(err);
+					} else {
+						socket.emit('push', doc);
+					}
+
+				});
+				
+			})
+			.on('error', opts.error);
 
 		});
 
 		io.listen(config.socket.port);
+
+		// log
+		if (config.debug) {
+			console.info('Started socket server on port ' + config.socket.port);
+		}
 
 	}
 
@@ -42,6 +67,5 @@
 	module.exports = {
 		start: start
 	};
-
 
 })();

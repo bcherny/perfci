@@ -47,7 +47,7 @@
 		db.save('_design/runs', {
 			views: {
 				list: {
-					map: 'function (doc){ emit(null, {mean:doc.mean, stddev:doc.stddev, count:doc.count} ) }'
+					map: 'function (doc){ emit(doc._id, {mean: doc.mean, stddev: doc.stddev, count: doc.count}) }'
 				}
 			}
 		});

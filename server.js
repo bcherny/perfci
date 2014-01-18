@@ -13,12 +13,20 @@
 
 	// http server
 	http.start({
-		db: db
+		db: db,
+		error: error
 	});
 
 	// socket server
 	socket.start({
+		db: db,
+		error: error,
 		server: http.server
 	});
+
+	// error handler
+	function error (err) {
+		console.error(err);
+	}
 
 })();
