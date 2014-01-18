@@ -18,7 +18,7 @@
 		// open socket
 		var socket = io.connect(config.socket.host + ':' + config.socket.port);
 
-		socket.on('hello', function (data) {
+		socket.on('push', function (data) {
 			console.log('sock: ', data);
 		});
 

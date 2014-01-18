@@ -13,12 +13,6 @@
 
 		io.on('connection', function (socket) {
 
-			//me.socket = socket;
-
-			socket.emit('hello', {
-				foo: 'bar'
-			});
-
 			// socket
 			// .on('message', function (data) {
 
@@ -28,18 +22,17 @@
 			// });
 			
 			// db change events
-			
-			var feed = opts.db.changes();
-
-			feed
+			opts.db
+			.changes()
 			.on('change', function (change) {
 
-				opts.db.view('runs/list', { id: change.id }, function (err, doc) {
+				opts.db.view('runs/list', { key: change.id }, function (err, doc) {
 
-					if (err) {
+					if (err || !doc || !doc.length) {
 						opts.error(err);
 					} else {
-						socket.emit('push', doc);
+						console.info('push', doc[0]);
+						socket.emit('push', doc[0]);
 					}
 
 				});
