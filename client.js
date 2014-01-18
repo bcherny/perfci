@@ -1,19 +1,30 @@
 ;(function(){
 	"use strict";
 
+	// imports
+	require('./node_modules/odometer/odometer');
+
 	var json2html = require('json-to-html'),
 		request = require('browser-request'),
 		io = require('socket.io/node_modules/socket.io-client'),
 		when = require('when');
 
+	// vars
 	var data = [];
 
+	// load config file
 	load('config.json').then(init, error);
 
 	function init (config) {
 
 		// fetch data
 		//load(config.http.host + ':' + config.http.port).then(render, error);
+		
+		// init odometer
+		window.odometerOptions = {
+			auto: false,
+			selector: '#count'
+		};
 
 		// open socket
 		var socket = io.connect(config.socket.host + ':' + config.socket.port);
@@ -29,22 +40,16 @@
 	function push (datum) {
 
 		data.push(datum);
-		render(data);
 		
+		setTimeout(render.bind(null, data), 0);
+
 	}
 
 	function render (data) {
 
-		document
-		.querySelector('#app')
-		.innerHTML =
-			'<p id="count">count: ' + data.length + '</p>' +
-			'<div id="json">' + json2html(data) + '</div>';
+		document.querySelector('#count .odometer').innerHTML = data.length;
+		document.querySelector('#json').innerHTML = json2html(data);
 
-	}
-
-	function error (err) {
-		throw err;
 	}
 
 	function load (url) {
@@ -60,6 +65,12 @@
 		});
 
 		return deferred.promise;
+
+	}
+
+	function error (err) {
+
+		throw err;
 
 	}
 

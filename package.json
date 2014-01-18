@@ -29,7 +29,8 @@
     "koa-cors": "0.0.5",
     "json-to-html": "~0.1.2",
     "socket.io": "git://github.com/LearnBoost/socket.io.git",
-    "umodel": "0.0.5"
+    "umodel": "0.0.5",
+    "odometer": "git://github.com/HubSpot/odometer.git"
   },
   "devDependencies": {
     "watchify": "~0.5.0"

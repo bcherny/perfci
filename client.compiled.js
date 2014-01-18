@@ -2,19 +2,30 @@
 ;(function(){
 	"use strict";
 
+	// imports
+	require('./node_modules/odometer/odometer');
+
 	var json2html = require('json-to-html'),
 		request = require('browser-request'),
 		io = require('socket.io/node_modules/socket.io-client'),
 		when = require('when');
 
+	// vars
 	var data = [];
 
+	// load config file
 	load('config.json').then(init, error);
 
 	function init (config) {
 
 		// fetch data
 		//load(config.http.host + ':' + config.http.port).then(render, error);
+		
+		// init odometer
+		window.odometerOptions = {
+			auto: false,
+			selector: '#count'
+		};
 
 		// open socket
 		var socket = io.connect(config.socket.host + ':' + config.socket.port);
@@ -30,22 +41,16 @@
 	function push (datum) {
 
 		data.push(datum);
-		render(data);
 		
+		setTimeout(render.bind(null, data), 0);
+
 	}
 
 	function render (data) {
 
-		document
-		.querySelector('#app')
-		.innerHTML =
-			'<p id="count">count: ' + data.length + '</p>' +
-			'<div id="json">' + json2html(data) + '</div>';
+		document.querySelector('#count .odometer').innerHTML = data.length;
+		document.querySelector('#json').innerHTML = json2html(data);
 
-	}
-
-	function error (err) {
-		throw err;
 	}
 
 	function load (url) {
@@ -64,8 +69,14 @@
 
 	}
 
+	function error (err) {
+
+		throw err;
+
+	}
+
 })();
-},{"browser-request":2,"json-to-html":3,"socket.io/node_modules/socket.io-client":4,"when":40}],2:[function(require,module,exports){
+},{"./node_modules/odometer/odometer":4,"browser-request":2,"json-to-html":3,"socket.io/node_modules/socket.io-client":5,"when":41}],2:[function(require,module,exports){
 // Browser Request
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -579,10 +590,636 @@ function html(obj, indents) {
 }
 
 },{}],4:[function(require,module,exports){
+(function() {
+  var COUNT_FRAMERATE, COUNT_MS_PER_FRAME, DIGIT_FORMAT, DIGIT_HTML, DIGIT_SPEEDBOOST, DURATION, FORMAT_MARK_HTML, FORMAT_PARSER, FRAMERATE, FRAMES_PER_VALUE, MS_PER_FRAME, MutationObserver, Odometer, RIBBON_HTML, TRANSITION_END_EVENTS, TRANSITION_SUPPORT, VALUE_HTML, addClass, createFromHTML, fractionalPart, now, removeClass, requestAnimationFrame, round, transitionCheckStyles, trigger, truncate, wrapJQuery, _jQueryWrapped, _old, _ref, _ref1,
+    __slice = [].slice;
+
+  VALUE_HTML = '<span class="odometer-value"></span>';
+
+  RIBBON_HTML = '<span class="odometer-ribbon"><span class="odometer-ribbon-inner">' + VALUE_HTML + '</span></span>';
+
+  DIGIT_HTML = '<span class="odometer-digit"><span class="odometer-digit-spacer">8</span><span class="odometer-digit-inner">' + RIBBON_HTML + '</span></span>';
+
+  FORMAT_MARK_HTML = '<span class="odometer-formatting-mark"></span>';
+
+  DIGIT_FORMAT = '(,ddd).dd';
+
+  FORMAT_PARSER = /^\(?([^)]*)\)?(?:(.)(d+))?$/;
+
+  FRAMERATE = 30;
+
+  DURATION = 2000;
+
+  COUNT_FRAMERATE = 20;
+
+  FRAMES_PER_VALUE = 2;
+
+  DIGIT_SPEEDBOOST = .5;
+
+  MS_PER_FRAME = 1000 / FRAMERATE;
+
+  COUNT_MS_PER_FRAME = 1000 / COUNT_FRAMERATE;
+
+  TRANSITION_END_EVENTS = 'transitionend webkitTransitionEnd oTransitionEnd otransitionend MSTransitionEnd';
+
+  transitionCheckStyles = document.createElement('div').style;
+
+  TRANSITION_SUPPORT = (transitionCheckStyles.transition != null) || (transitionCheckStyles.webkitTransition != null) || (transitionCheckStyles.mozTransition != null) || (transitionCheckStyles.oTransition != null);
+
+  requestAnimationFrame = window.requestAnimationFrame || window.mozRequestAnimationFrame || window.webkitRequestAnimationFrame || window.msRequestAnimationFrame;
+
+  MutationObserver = window.MutationObserver || window.WebKitMutationObserver || window.MozMutationObserver;
+
+  createFromHTML = function(html) {
+    var el;
+    el = document.createElement('div');
+    el.innerHTML = html;
+    return el.children[0];
+  };
+
+  removeClass = function(el, name) {
+    return el.className = el.className.replace(new RegExp("(^| )" + (name.split(' ').join('|')) + "( |$)", 'gi'), ' ');
+  };
+
+  addClass = function(el, name) {
+    removeClass(el, name);
+    return el.className += " " + name;
+  };
+
+  trigger = function(el, name) {
+    var evt;
+    if (document.createEvent != null) {
+      evt = document.createEvent('HTMLEvents');
+      evt.initEvent(name, true, true);
+      return el.dispatchEvent(evt);
+    }
+  };
+
+  now = function() {
+    var _ref, _ref1;
+    return (_ref = (_ref1 = window.performance) != null ? typeof _ref1.now === "function" ? _ref1.now() : void 0 : void 0) != null ? _ref : +(new Date);
+  };
+
+  round = function(val, precision) {
+    if (precision == null) {
+      precision = 0;
+    }
+    if (!precision) {
+      return Math.round(val);
+    }
+    val *= Math.pow(10, precision);
+    val += 0.5;
+    val = Math.floor(val);
+    return val /= Math.pow(10, precision);
+  };
+
+  truncate = function(val) {
+    if (val < 0) {
+      return Math.ceil(val);
+    } else {
+      return Math.floor(val);
+    }
+  };
+
+  fractionalPart = function(val) {
+    return val - round(val);
+  };
+
+  _jQueryWrapped = false;
+
+  (wrapJQuery = function() {
+    var property, _i, _len, _ref, _results;
+    if (_jQueryWrapped) {
+      return;
+    }
+    if (window.jQuery != null) {
+      _jQueryWrapped = true;
+      _ref = ['html', 'text'];
+      _results = [];
+      for (_i = 0, _len = _ref.length; _i < _len; _i++) {
+        property = _ref[_i];
+        _results.push((function(property) {
+          var old;
+          old = window.jQuery.fn[property];
+          return window.jQuery.fn[property] = function(val) {
+            var _ref1;
+            if ((val == null) || (((_ref1 = this[0]) != null ? _ref1.odometer : void 0) == null)) {
+              return old.apply(this, arguments);
+            }
+            return this[0].odometer.update(val);
+          };
+        })(property));
+      }
+      return _results;
+    }
+  })();
+
+  setTimeout(wrapJQuery, 0);
+
+  Odometer = (function() {
+    function Odometer(options) {
+      var e, k, property, v, _base, _i, _len, _ref, _ref1, _ref2,
+        _this = this;
+      this.options = options;
+      this.el = this.options.el;
+      if (this.el.odometer != null) {
+        return this.el.odometer;
+      }
+      this.el.odometer = this;
+      _ref = Odometer.options;
+      for (k in _ref) {
+        v = _ref[k];
+        if (this.options[k] == null) {
+          this.options[k] = v;
+        }
+      }
+      if ((_base = this.options).duration == null) {
+        _base.duration = DURATION;
+      }
+      this.MAX_VALUES = ((this.options.duration / MS_PER_FRAME) / FRAMES_PER_VALUE) | 0;
+      this.resetFormat();
+      this.value = this.cleanValue((_ref1 = this.options.value) != null ? _ref1 : '');
+      this.renderInside();
+      this.render();
+      try {
+        _ref2 = ['innerHTML', 'innerText', 'textContent'];
+        for (_i = 0, _len = _ref2.length; _i < _len; _i++) {
+          property = _ref2[_i];
+          if (this.el[property] != null) {
+            (function(property) {
+              return Object.defineProperty(_this.el, property, {
+                get: function() {
+                  var _ref3;
+                  if (property === 'innerHTML') {
+                    return _this.inside.outerHTML;
+                  } else {
+                    return (_ref3 = _this.inside.innerText) != null ? _ref3 : _this.inside.textContent;
+                  }
+                },
+                set: function(val) {
+                  return _this.update(val);
+                }
+              });
+            })(property);
+          }
+        }
+      } catch (_error) {
+        e = _error;
+        this.watchForMutations();
+      }
+      this;
+    }
+
+    Odometer.prototype.renderInside = function() {
+      this.inside = document.createElement('div');
+      this.inside.className = 'odometer-inside';
+      this.el.innerHTML = '';
+      return this.el.appendChild(this.inside);
+    };
+
+    Odometer.prototype.watchForMutations = function() {
+      var e,
+        _this = this;
+      if (MutationObserver == null) {
+        return;
+      }
+      try {
+        if (this.observer == null) {
+          this.observer = new MutationObserver(function(mutations) {
+            var newVal;
+            newVal = _this.el.innerText;
+            _this.renderInside();
+            _this.render(_this.value);
+            return _this.update(newVal);
+          });
+        }
+        this.watchMutations = true;
+        return this.startWatchingMutations();
+      } catch (_error) {
+        e = _error;
+      }
+    };
+
+    Odometer.prototype.startWatchingMutations = function() {
+      if (this.watchMutations) {
+        return this.observer.observe(this.el, {
+          childList: true
+        });
+      }
+    };
+
+    Odometer.prototype.stopWatchingMutations = function() {
+      var _ref;
+      return (_ref = this.observer) != null ? _ref.disconnect() : void 0;
+    };
+
+    Odometer.prototype.cleanValue = function(val) {
+      var _ref;
+      if (typeof val === 'string') {
+        val = val.replace((_ref = this.format.radix) != null ? _ref : '.', '<radix>');
+        val = val.replace(/[.,]/g, '');
+        val = val.replace('<radix>', '.');
+        val = parseFloat(val, 10) || 0;
+      }
+      return round(val, this.format.precision);
+    };
+
+    Odometer.prototype.bindTransitionEnd = function() {
+      var event, renderEnqueued, _i, _len, _ref, _results,
+        _this = this;
+      if (this.transitionEndBound) {
+        return;
+      }
+      this.transitionEndBound = true;
+      renderEnqueued = false;
+      _ref = TRANSITION_END_EVENTS.split(' ');
+      _results = [];
+      for (_i = 0, _len = _ref.length; _i < _len; _i++) {
+        event = _ref[_i];
+        _results.push(this.el.addEventListener(event, function() {
+          if (renderEnqueued) {
+            return true;
+          }
+          renderEnqueued = true;
+          setTimeout(function() {
+            _this.render();
+            renderEnqueued = false;
+            return trigger(_this.el, 'odometerdone');
+          }, 0);
+          return true;
+        }, false));
+      }
+      return _results;
+    };
+
+    Odometer.prototype.resetFormat = function() {
+      var format, fractional, parsed, precision, radix, repeating, _ref, _ref1;
+      format = (_ref = this.options.format) != null ? _ref : DIGIT_FORMAT;
+      format || (format = 'd');
+      parsed = FORMAT_PARSER.exec(format);
+      if (!parsed) {
+        throw new Error("Odometer: Unparsable digit format");
+      }
+      _ref1 = parsed.slice(1, 4), repeating = _ref1[0], radix = _ref1[1], fractional = _ref1[2];
+      precision = (fractional != null ? fractional.length : void 0) || 0;
+      return this.format = {
+        repeating: repeating,
+        radix: radix,
+        precision: precision
+      };
+    };
+
+    Odometer.prototype.render = function(value) {
+      var classes, cls, digit, match, newClasses, theme, wholePart, _i, _j, _len, _len1, _ref;
+      if (value == null) {
+        value = this.value;
+      }
+      this.stopWatchingMutations();
+      this.resetFormat();
+      this.inside.innerHTML = '';
+      theme = this.options.theme;
+      classes = this.el.className.split(' ');
+      newClasses = [];
+      for (_i = 0, _len = classes.length; _i < _len; _i++) {
+        cls = classes[_i];
+        if (!cls.length) {
+          continue;
+        }
+        if (match = /^odometer-theme-(.+)$/.exec(cls)) {
+          theme = match[1];
+          continue;
+        }
+        if (/^odometer(-|$)/.test(cls)) {
+          continue;
+        }
+        newClasses.push(cls);
+      }
+      newClasses.push('odometer');
+      if (!TRANSITION_SUPPORT) {
+        newClasses.push('odometer-no-transitions');
+      }
+      if (theme) {
+        newClasses.push("odometer-theme-" + theme);
+      } else {
+        newClasses.push("odometer-auto-theme");
+      }
+      this.el.className = newClasses.join(' ');
+      this.ribbons = {};
+      this.digits = [];
+      wholePart = !this.format.precision || !fractionalPart(value) || false;
+      _ref = value.toString().split('').reverse();
+      for (_j = 0, _len1 = _ref.length; _j < _len1; _j++) {
+        digit = _ref[_j];
+        if (digit === '.') {
+          wholePart = true;
+        }
+        this.addDigit(digit, wholePart);
+      }
+      return this.startWatchingMutations();
+    };
+
+    Odometer.prototype.update = function(newValue) {
+      var diff,
+        _this = this;
+      newValue = this.cleanValue(newValue);
+      if (!(diff = newValue - this.value)) {
+        return;
+      }
+      removeClass(this.el, 'odometer-animating-up odometer-animating-down odometer-animating');
+      if (diff > 0) {
+        addClass(this.el, 'odometer-animating-up');
+      } else {
+        addClass(this.el, 'odometer-animating-down');
+      }
+      this.stopWatchingMutations();
+      this.animate(newValue);
+      this.startWatchingMutations();
+      setTimeout(function() {
+        _this.el.offsetHeight;
+        return addClass(_this.el, 'odometer-animating');
+      }, 0);
+      return this.value = newValue;
+    };
+
+    Odometer.prototype.renderDigit = function() {
+      return createFromHTML(DIGIT_HTML);
+    };
+
+    Odometer.prototype.insertDigit = function(digit, before) {
+      if (before != null) {
+        return this.inside.insertBefore(digit, before);
+      } else if (!this.inside.children.length) {
+        return this.inside.appendChild(digit);
+      } else {
+        return this.inside.insertBefore(digit, this.inside.children[0]);
+      }
+    };
+
+    Odometer.prototype.addSpacer = function(chr, before, extraClasses) {
+      var spacer;
+      spacer = createFromHTML(FORMAT_MARK_HTML);
+      spacer.innerHTML = chr;
+      if (extraClasses) {
+        addClass(spacer, extraClasses);
+      }
+      return this.insertDigit(spacer, before);
+    };
+
+    Odometer.prototype.addDigit = function(value, repeating) {
+      var chr, digit, resetted, _ref;
+      if (repeating == null) {
+        repeating = true;
+      }
+      if (value === '-') {
+        return this.addSpacer(value, null, 'odometer-negation-mark');
+      }
+      if (value === '.') {
+        return this.addSpacer((_ref = this.format.radix) != null ? _ref : '.', null, 'odometer-radix-mark');
+      }
+      if (repeating) {
+        resetted = false;
+        while (true) {
+          if (!this.format.repeating.length) {
+            if (resetted) {
+              throw new Error("Bad odometer format without digits");
+            }
+            this.resetFormat();
+            resetted = true;
+          }
+          chr = this.format.repeating[this.format.repeating.length - 1];
+          this.format.repeating = this.format.repeating.substring(0, this.format.repeating.length - 1);
+          if (chr === 'd') {
+            break;
+          }
+          this.addSpacer(chr);
+        }
+      }
+      digit = this.renderDigit();
+      digit.querySelector('.odometer-value').innerHTML = value;
+      this.digits.push(digit);
+      return this.insertDigit(digit);
+    };
+
+    Odometer.prototype.animate = function(newValue) {
+      if (!TRANSITION_SUPPORT || this.options.animation === 'count') {
+        return this.animateCount(newValue);
+      } else {
+        return this.animateSlide(newValue);
+      }
+    };
+
+    Odometer.prototype.animateCount = function(newValue) {
+      var cur, diff, last, start, tick,
+        _this = this;
+      if (!(diff = +newValue - this.value)) {
+        return;
+      }
+      start = last = now();
+      cur = this.value;
+      return (tick = function() {
+        var delta, dist, fraction;
+        if ((now() - start) > _this.options.duration) {
+          _this.value = newValue;
+          _this.render();
+          trigger(_this.el, 'odometerdone');
+          return;
+        }
+        delta = now() - last;
+        if (delta > COUNT_MS_PER_FRAME) {
+          last = now();
+          fraction = delta / _this.options.duration;
+          dist = diff * fraction;
+          cur += dist;
+          _this.render(Math.round(cur));
+        }
+        if (requestAnimationFrame != null) {
+          return requestAnimationFrame(tick);
+        } else {
+          return setTimeout(tick, COUNT_MS_PER_FRAME);
+        }
+      })();
+    };
+
+    Odometer.prototype.getDigitCount = function() {
+      var i, max, value, values, _i, _len;
+      values = 1 <= arguments.length ? __slice.call(arguments, 0) : [];
+      for (i = _i = 0, _len = values.length; _i < _len; i = ++_i) {
+        value = values[i];
+        values[i] = Math.abs(value);
+      }
+      max = Math.max.apply(Math, values);
+      return Math.ceil(Math.log(max + 1) / Math.log(10));
+    };
+
+    Odometer.prototype.getFractionalDigitCount = function() {
+      var i, parser, parts, value, values, _i, _len;
+      values = 1 <= arguments.length ? __slice.call(arguments, 0) : [];
+      parser = /^\-?\d*\.(\d*?)0*$/;
+      for (i = _i = 0, _len = values.length; _i < _len; i = ++_i) {
+        value = values[i];
+        values[i] = value.toString();
+        parts = parser.exec(values[i]);
+        if (parts == null) {
+          values[i] = 0;
+        } else {
+          values[i] = parts[1].length;
+        }
+      }
+      return Math.max.apply(Math, values);
+    };
+
+    Odometer.prototype.resetDigits = function() {
+      this.digits = [];
+      this.ribbons = [];
+      this.inside.innerHTML = '';
+      return this.resetFormat();
+    };
+
+    Odometer.prototype.animateSlide = function(newValue) {
+      var boosted, cur, diff, digitCount, digits, dist, end, fractionalCount, frame, frames, i, incr, j, mark, numEl, oldValue, start, _base, _i, _j, _k, _l, _len, _len1, _len2, _m, _ref, _results;
+      oldValue = this.value;
+      fractionalCount = this.getFractionalDigitCount(oldValue, newValue);
+      if (fractionalCount) {
+        newValue = newValue * Math.pow(10, fractionalCount);
+        oldValue = oldValue * Math.pow(10, fractionalCount);
+      }
+      if (!(diff = newValue - oldValue)) {
+        return;
+      }
+      this.bindTransitionEnd();
+      digitCount = this.getDigitCount(oldValue, newValue);
+      digits = [];
+      boosted = 0;
+      for (i = _i = 0; 0 <= digitCount ? _i < digitCount : _i > digitCount; i = 0 <= digitCount ? ++_i : --_i) {
+        start = truncate(oldValue / Math.pow(10, digitCount - i - 1));
+        end = truncate(newValue / Math.pow(10, digitCount - i - 1));
+        dist = end - start;
+        if (Math.abs(dist) > this.MAX_VALUES) {
+          frames = [];
+          incr = dist / (this.MAX_VALUES + this.MAX_VALUES * boosted * DIGIT_SPEEDBOOST);
+          cur = start;
+          while ((dist > 0 && cur < end) || (dist < 0 && cur > end)) {
+            frames.push(Math.round(cur));
+            cur += incr;
+          }
+          if (frames[frames.length - 1] !== end) {
+            frames.push(end);
+          }
+          boosted++;
+        } else {
+          frames = (function() {
+            _results = [];
+            for (var _j = start; start <= end ? _j <= end : _j >= end; start <= end ? _j++ : _j--){ _results.push(_j); }
+            return _results;
+          }).apply(this);
+        }
+        for (i = _k = 0, _len = frames.length; _k < _len; i = ++_k) {
+          frame = frames[i];
+          frames[i] = Math.abs(frame % 10);
+        }
+        digits.push(frames);
+      }
+      this.resetDigits();
+      _ref = digits.reverse();
+      for (i = _l = 0, _len1 = _ref.length; _l < _len1; i = ++_l) {
+        frames = _ref[i];
+        if (!this.digits[i]) {
+          this.addDigit(' ', i >= fractionalCount);
+        }
+        if ((_base = this.ribbons)[i] == null) {
+          _base[i] = this.digits[i].querySelector('.odometer-ribbon-inner');
+        }
+        this.ribbons[i].innerHTML = '';
+        if (diff < 0) {
+          frames = frames.reverse();
+        }
+        for (j = _m = 0, _len2 = frames.length; _m < _len2; j = ++_m) {
+          frame = frames[j];
+          numEl = document.createElement('div');
+          numEl.className = 'odometer-value';
+          numEl.innerHTML = frame;
+          this.ribbons[i].appendChild(numEl);
+          if (j === frames.length - 1) {
+            addClass(numEl, 'odometer-last-value');
+          }
+          if (j === 0) {
+            addClass(numEl, 'odometer-first-value');
+          }
+        }
+      }
+      if (start < 0) {
+        this.addDigit('-');
+      }
+      mark = this.inside.querySelector('.odometer-radix-mark');
+      if (mark != null) {
+        mark.parent.removeChild(mark);
+      }
+      if (fractionalCount) {
+        return this.addSpacer(this.format.radix, this.digits[fractionalCount - 1], 'odometer-radix-mark');
+      }
+    };
+
+    return Odometer;
+
+  })();
+
+  Odometer.options = (_ref = window.odometerOptions) != null ? _ref : {};
+
+  setTimeout(function() {
+    var k, v, _base, _ref1, _results;
+    if (window.odometerOptions) {
+      _ref1 = window.odometerOptions;
+      _results = [];
+      for (k in _ref1) {
+        v = _ref1[k];
+        _results.push((_base = Odometer.options)[k] != null ? (_base = Odometer.options)[k] : _base[k] = v);
+      }
+      return _results;
+    }
+  }, 0);
+
+  Odometer.init = function() {
+    var el, elements, _i, _len, _ref1, _results;
+    if (document.querySelectorAll == null) {
+      return;
+    }
+    elements = document.querySelectorAll(Odometer.options.selector || '.odometer');
+    _results = [];
+    for (_i = 0, _len = elements.length; _i < _len; _i++) {
+      el = elements[_i];
+      _results.push(el.odometer = new Odometer({
+        el: el,
+        value: (_ref1 = el.innerText) != null ? _ref1 : el.textContent
+      }));
+    }
+    return _results;
+  };
+
+  if ((((_ref1 = document.documentElement) != null ? _ref1.doScroll : void 0) != null) && (document.createEventObject != null)) {
+    _old = document.onreadystatechange;
+    document.onreadystatechange = function() {
+      if (document.readyState === 'complete' && Odometer.options.auto !== false) {
+        Odometer.init();
+      }
+      return _old != null ? _old.apply(this, arguments) : void 0;
+    };
+  } else {
+    document.addEventListener('DOMContentLoaded', function() {
+      if (Odometer.options.auto !== false) {
+        return Odometer.init();
+      }
+    }, false);
+  }
+
+  window.Odometer = Odometer;
+
+}).call(this);
+
+},{}],5:[function(require,module,exports){
 
 module.exports = require('./lib/');
 
-},{"./lib/":5}],5:[function(require,module,exports){
+},{"./lib/":6}],6:[function(require,module,exports){
 var __dirname="/node_modules/socket.io/node_modules/socket.io-client/lib";
 /**
  * Module dependencies.
@@ -672,7 +1309,7 @@ exports.connect = lookup;
 exports.Manager = require('./manager');
 exports.Socket = require('./socket');
 
-},{"./manager":6,"./socket":8,"./url":9,"fs":43,"socket.io-parser":37}],6:[function(require,module,exports){
+},{"./manager":7,"./socket":9,"./url":10,"fs":44,"socket.io-parser":38}],7:[function(require,module,exports){
 
 /**
  * Module dependencies.
@@ -1036,7 +1673,7 @@ Manager.prototype.onreconnect = function(){
   this.emit('reconnect', attempt);
 };
 
-},{"./on":7,"./socket":8,"./url":9,"bind":10,"debug":11,"emitter":13,"engine.io-client":15,"object-component":36,"socket.io-parser":37}],7:[function(require,module,exports){
+},{"./on":8,"./socket":9,"./url":10,"bind":11,"debug":12,"emitter":14,"engine.io-client":16,"object-component":37,"socket.io-parser":38}],8:[function(require,module,exports){
 
 /**
  * Module exports.
@@ -1062,7 +1699,7 @@ function on(obj, ev, fn) {
   };
 }
 
-},{}],8:[function(require,module,exports){
+},{}],9:[function(require,module,exports){
 
 /**
  * Module dependencies.
@@ -1411,7 +2048,7 @@ Socket.prototype.disconnect = function(){
   return this;
 };
 
-},{"./on":7,"bind":10,"debug":11,"emitter":13,"socket.io-parser":37,"to-array":39}],9:[function(require,module,exports){
+},{"./on":8,"bind":11,"debug":12,"emitter":14,"socket.io-parser":38,"to-array":40}],10:[function(require,module,exports){
 
 /**
  * Module dependencies.
@@ -1474,7 +2111,7 @@ function parse(uri){
   return obj;
 }
 
-},{"debug":11,"url":46}],10:[function(require,module,exports){
+},{"debug":12,"url":47}],11:[function(require,module,exports){
 
 /**
  * Slice reference.
@@ -1500,10 +2137,10 @@ module.exports = function(obj, fn){
   }
 };
 
-},{}],11:[function(require,module,exports){
+},{}],12:[function(require,module,exports){
 
 module.exports = require('./lib/debug');
-},{"./lib/debug":12}],12:[function(require,module,exports){
+},{"./lib/debug":13}],13:[function(require,module,exports){
 var process=require("__browserify_process");
 /*!
  * debug
@@ -1652,7 +2289,7 @@ function debug(name) {
     : plain;
 }
 
-},{"__browserify_process":51,"tty":45}],13:[function(require,module,exports){
+},{"__browserify_process":52,"tty":46}],14:[function(require,module,exports){
 
 /**
  * Module dependencies.
@@ -1816,7 +2453,7 @@ Emitter.prototype.hasListeners = function(event){
   return !! this.listeners(event).length;
 };
 
-},{"indexof":14}],14:[function(require,module,exports){
+},{"indexof":15}],15:[function(require,module,exports){
 
 var indexOf = [].indexOf;
 
@@ -1827,11 +2464,11 @@ module.exports = function(arr, obj){
   }
   return -1;
 };
-},{}],15:[function(require,module,exports){
+},{}],16:[function(require,module,exports){
 
 module.exports =  require('./lib/');
 
-},{"./lib/":17}],16:[function(require,module,exports){
+},{"./lib/":18}],17:[function(require,module,exports){
 
 /**
  * Module dependencies.
@@ -1869,7 +2506,7 @@ Emitter.prototype.removeEventListener = Emitter.prototype.off;
 
 Emitter.prototype.removeListener = Emitter.prototype.off;
 
-},{"emitter":13}],17:[function(require,module,exports){
+},{"emitter":14}],18:[function(require,module,exports){
 
 module.exports = require('./socket');
 
@@ -1881,7 +2518,7 @@ module.exports = require('./socket');
  */
 module.exports.parser = require('engine.io-parser');
 
-},{"./socket":18,"engine.io-parser":29}],18:[function(require,module,exports){
+},{"./socket":19,"engine.io-parser":30}],19:[function(require,module,exports){
 /**
  * Module dependencies.
  */
@@ -2485,7 +3122,7 @@ Socket.prototype.filterUpgrades = function (upgrades) {
   return filteredUpgrades;
 };
 
-},{"./emitter":16,"./transport":19,"./transports":21,"./util":26,"debug":28,"engine.io-parser":29,"global":32,"indexof":34}],19:[function(require,module,exports){
+},{"./emitter":17,"./transport":20,"./transports":22,"./util":27,"debug":29,"engine.io-parser":30,"global":33,"indexof":35}],20:[function(require,module,exports){
 
 /**
  * Module dependencies.
@@ -2629,7 +3266,7 @@ Transport.prototype.onClose = function () {
   this.emit('close');
 };
 
-},{"./emitter":16,"./util":26,"engine.io-parser":29}],20:[function(require,module,exports){
+},{"./emitter":17,"./util":27,"engine.io-parser":30}],21:[function(require,module,exports){
 /**
  * Module dependencies.
  */
@@ -2891,7 +3528,7 @@ function load (arr, fn) {
   process(0);
 };
 
-},{"../util":26,"./websocket":25,"debug":28,"global":32}],21:[function(require,module,exports){
+},{"../util":27,"./websocket":26,"debug":29,"global":33}],22:[function(require,module,exports){
 
 /**
  * Module dependencies
@@ -2949,7 +3586,7 @@ function polling (opts) {
   }
 };
 
-},{"../util":26,"./flashsocket":20,"./polling-jsonp":22,"./polling-xhr":23,"./websocket":25,"global":32}],22:[function(require,module,exports){
+},{"../util":27,"./flashsocket":21,"./polling-jsonp":23,"./polling-xhr":24,"./websocket":26,"global":33}],23:[function(require,module,exports){
 
 /**
  * Module requirements.
@@ -3183,7 +3820,7 @@ JSONPPolling.prototype.doWrite = function (data, fn) {
   }
 };
 
-},{"../util":26,"./polling":24,"global":32}],23:[function(require,module,exports){
+},{"../util":27,"./polling":25,"global":33}],24:[function(require,module,exports){
 /**
  * Module requirements.
  */
@@ -3478,7 +4115,7 @@ if (xobject) {
   });
 }
 
-},{"../emitter":16,"../util":26,"./polling":24,"debug":28,"global":32}],24:[function(require,module,exports){
+},{"../emitter":17,"../util":27,"./polling":25,"debug":29,"global":33}],25:[function(require,module,exports){
 /**
  * Module dependencies.
  */
@@ -3712,7 +4349,7 @@ Polling.prototype.uri = function(){
   return schema + '://' + this.hostname + port + this.path + query;
 };
 
-},{"../transport":19,"../util":26,"debug":28,"engine.io-parser":29,"global":32}],25:[function(require,module,exports){
+},{"../transport":20,"../util":27,"debug":29,"engine.io-parser":30,"global":33}],26:[function(require,module,exports){
 /**
  * Module dependencies.
  */
@@ -3910,7 +4547,7 @@ WS.prototype.check = function(){
   return !!WebSocket && !('__initialize' in WebSocket && this.name === WS.prototype.name);
 };
 
-},{"../transport":19,"../util":26,"debug":28,"engine.io-parser":29,"global":32,"ws":35}],26:[function(require,module,exports){
+},{"../transport":20,"../util":27,"debug":29,"engine.io-parser":30,"global":33,"ws":36}],27:[function(require,module,exports){
 
 var global = require('global');
 
@@ -4188,7 +4825,7 @@ exports.qsParse = function(qs){
   return qry;
 };
 
-},{"global":32,"has-cors":33,"xmlhttprequest":27}],27:[function(require,module,exports){
+},{"global":33,"has-cors":34,"xmlhttprequest":28}],28:[function(require,module,exports){
 // browser shim for xmlhttprequest module
 var hasCORS = require('has-cors');
 
@@ -4209,7 +4846,7 @@ module.exports = function(opts) {
   }
 }
 
-},{"has-cors":33}],28:[function(require,module,exports){
+},{"has-cors":34}],29:[function(require,module,exports){
 
 /**
  * Expose `debug()` as the module.
@@ -4335,9 +4972,9 @@ debug.enabled = function(name) {
 
 if (window.localStorage) debug.enable(localStorage.debug);
 
-},{}],29:[function(require,module,exports){
-arguments[4][4][0].apply(exports,arguments)
-},{"./lib/":30}],30:[function(require,module,exports){
+},{}],30:[function(require,module,exports){
+arguments[4][5][0].apply(exports,arguments)
+},{"./lib/":31}],31:[function(require,module,exports){
 /**
  * Module dependencies.
  */
@@ -4506,7 +5143,7 @@ exports.decodePayload = function (data, callback) {
 
 };
 
-},{"./keys":31}],31:[function(require,module,exports){
+},{"./keys":32}],32:[function(require,module,exports){
 
 /**
  * Gets the keys for an object.
@@ -4527,7 +5164,7 @@ module.exports = Object.keys || function keys (obj){
   return arr;
 };
 
-},{}],32:[function(require,module,exports){
+},{}],33:[function(require,module,exports){
 
 /**
  * Returns `this`. Execute this without a "context" (i.e. without it being
@@ -4537,7 +5174,7 @@ module.exports = Object.keys || function keys (obj){
 
 module.exports = (function () { return this; })();
 
-},{}],33:[function(require,module,exports){
+},{}],34:[function(require,module,exports){
 
 /**
  * Module dependencies.
@@ -4556,9 +5193,9 @@ var global = require('global');
 module.exports = 'XMLHttpRequest' in global &&
   'withCredentials' in new global.XMLHttpRequest();
 
-},{"global":32}],34:[function(require,module,exports){
-module.exports=require(14)
-},{}],35:[function(require,module,exports){
+},{"global":33}],35:[function(require,module,exports){
+module.exports=require(15)
+},{}],36:[function(require,module,exports){
 
 /**
  * Module dependencies.
@@ -4603,7 +5240,7 @@ function ws(uri, protocols, opts) {
 
 if (WebSocket) ws.prototype = WebSocket.prototype;
 
-},{}],36:[function(require,module,exports){
+},{}],37:[function(require,module,exports){
 
 /**
  * HOP ref.
@@ -4688,7 +5325,7 @@ exports.length = function(obj){
 exports.isEmpty = function(obj){
   return 0 == exports.length(obj);
 };
-},{}],37:[function(require,module,exports){
+},{}],38:[function(require,module,exports){
 
 /**
  * Module dependencies.
@@ -4865,7 +5502,7 @@ function error(data){
   };
 }
 
-},{"debug":11,"json3":38}],38:[function(require,module,exports){
+},{"debug":12,"json3":39}],39:[function(require,module,exports){
 /*! JSON v3.2.6 | http://bestiejs.github.io/json3 | Copyright 2012-2013, Kit Cambridge | http://kit.mit-license.org */
 ;(function (window) {
   // Convenience aliases.
@@ -5728,7 +6365,7 @@ function error(data){
   }
 }(this));
 
-},{}],39:[function(require,module,exports){
+},{}],40:[function(require,module,exports){
 module.exports = toArray
 
 function toArray(list, index) {
@@ -5743,7 +6380,7 @@ function toArray(list, index) {
     return array
 }
 
-},{}],40:[function(require,module,exports){
+},{}],41:[function(require,module,exports){
 var process=require("__browserify_process");/** @license MIT License (c) copyright 2011-2013 original author or authors */
 
 /**
@@ -6673,7 +7310,7 @@ define(function (require) {
 });
 })(typeof define === 'function' && define.amd ? define : function (factory) { module.exports = factory(require); });
 
-},{"__browserify_process":51}],41:[function(require,module,exports){
+},{"__browserify_process":52}],42:[function(require,module,exports){
 
 
 //
@@ -6891,7 +7528,7 @@ if (typeof Object.getOwnPropertyDescriptor === 'function') {
   exports.getOwnPropertyDescriptor = valueObject;
 }
 
-},{}],42:[function(require,module,exports){
+},{}],43:[function(require,module,exports){
 // Copyright Joyent, Inc. and other Node contributors.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a
@@ -7208,13 +7845,13 @@ assert.doesNotThrow = function(block, /*optional*/message) {
 };
 
 assert.ifError = function(err) { if (err) {throw err;}};
-},{"_shims":41,"util":47}],43:[function(require,module,exports){
+},{"_shims":42,"util":48}],44:[function(require,module,exports){
 
 // not implemented
 // The reason for having an empty file and not throwing is to allow
 // untraditional implementation of this module.
 
-},{}],44:[function(require,module,exports){
+},{}],45:[function(require,module,exports){
 // Copyright Joyent, Inc. and other Node contributors.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a
@@ -7425,7 +8062,7 @@ QueryString.parse = QueryString.decode = function(qs, sep, eq, options) {
 
   return obj;
 };
-},{"_shims":41,"buffer":49,"util":47}],45:[function(require,module,exports){
+},{"_shims":42,"buffer":50,"util":48}],46:[function(require,module,exports){
 
 exports.isatty = function () { return false; };
 
@@ -7439,7 +8076,7 @@ function WriteStream() {
 }
 exports.WriteStream = WriteStream;
 
-},{}],46:[function(require,module,exports){
+},{}],47:[function(require,module,exports){
 // Copyright Joyent, Inc. and other Node contributors.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a
@@ -8134,7 +8771,7 @@ Url.prototype.parseHost = function() {
   }
   if (host) this.hostname = host;
 };
-},{"_shims":41,"querystring":44,"util":47}],47:[function(require,module,exports){
+},{"_shims":42,"querystring":45,"util":48}],48:[function(require,module,exports){
 // Copyright Joyent, Inc. and other Node contributors.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a
@@ -8679,7 +9316,7 @@ function hasOwnProperty(obj, prop) {
   return Object.prototype.hasOwnProperty.call(obj, prop);
 }
 
-},{"_shims":41}],48:[function(require,module,exports){
+},{"_shims":42}],49:[function(require,module,exports){
 exports.readIEEE754 = function(buffer, offset, isBE, mLen, nBytes) {
   var e, m,
       eLen = nBytes * 8 - mLen - 1,
@@ -8765,7 +9402,7 @@ exports.writeIEEE754 = function(buffer, value, offset, isBE, mLen, nBytes) {
   buffer[offset + i - d] |= s * 128;
 };
 
-},{}],49:[function(require,module,exports){
+},{}],50:[function(require,module,exports){
 var assert;
 exports.Buffer = Buffer;
 exports.SlowBuffer = Buffer;
@@ -9891,7 +10528,7 @@ Buffer.prototype.writeDoubleBE = function(value, offset, noAssert) {
   writeDouble(this, value, offset, true, noAssert);
 };
 
-},{"./buffer_ieee754":48,"assert":42,"base64-js":50}],50:[function(require,module,exports){
+},{"./buffer_ieee754":49,"assert":43,"base64-js":51}],51:[function(require,module,exports){
 (function (exports) {
 	'use strict';
 
@@ -9977,7 +10614,7 @@ Buffer.prototype.writeDoubleBE = function(value, offset, noAssert) {
 	module.exports.fromByteArray = uint8ToBase64;
 }());
 
-},{}],51:[function(require,module,exports){
+},{}],52:[function(require,module,exports){
 // shim for using process in browser
 
 var process = module.exports = {};
