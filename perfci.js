@@ -2,11 +2,21 @@
 
 	"use strict";
 
-	var config = require('cat-settings').loadSync(__dirname + '/config.json'),
+	// imports
+	require('colors');
+	var _ = require('lodash'),
+		config = require('cat-settings').loadSync(__dirname + '/config.json'),
 		cradle = require('cradle'),
 		objectid = require('objectid'),
 		//suite = require('./sample-bench'),
 		when = require('when');
+
+	// check for environment vars
+	['SAUCE_USER', 'SAUCE_KEY'].forEach(function (key) {
+		if (_.isUndefined(process.env[key])) {
+			console.error((key + ' environment variable must be defined!').red);
+		}
+	});
 
 	// model
 	var state = {
@@ -40,12 +50,8 @@
 
 	}
 
-	function toArray (arraylike) {
-		return [].slice.call(arraylike);
-	}
-
 	function log () {
-		toArray(arguments).forEach(function (arg) {
+		_.toArray(arguments).forEach(function (arg) {
 			console.info('perfci:', arg);
 		});
 	}
@@ -81,12 +87,12 @@
 	function init (suite) {
 
 		// run benchmark
-		setTimeout(function(){
+		_.defer(function(){
 			suite
 			.on('cycle', cycle)
 			.on('complete', complete)
 			.run();
-		}, 0);
+		});
 
 		return state.deferred.promise;
 
