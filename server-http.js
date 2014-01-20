@@ -3,11 +3,14 @@
 	"use strict";
 
 	var koa = require('koa'),
-		config = require('cat-settings').loadSync(__dirname + '/config.json'),
 		cors = require('koa-cors'),
-		when = require('when');
+		when = require('when'),
+		Logger = require('yal');
 
 	function start (opts) {
+
+		// init logger
+		var log = new Logger('tcp://' + opts.config.logger.host + ':' + opts.config.logger.port);
 
 		// init server
 		(module.exports.server = koa())
@@ -23,11 +26,11 @@
 		})
 
 		// start server!
-		.listen(config.http.port);
+		.listen(opts.config.http.port);
 
 		// log
-		if (config.debug) {
-			console.info('Started HTTP server on port ' + config.http.port);
+		if (opts.config.debug) {
+			log.info('Started HTTP server on port ' + opts.config.http.port);
 		}
 
 	}

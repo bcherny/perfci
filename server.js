@@ -1,28 +1,35 @@
 ;(function(){
 	"use strict";
 
-	var config = require('cat-settings').loadSync(__dirname + '/config.json'),
+	var _ = require('lodash'),
+		config = require('cat-settings').loadSync(__dirname + '/config.json'),
 		cradle = require('cradle'),
 		http = require('./server-http'),
-		socket = require('./server-socket');
+		socket = require('./server-socket'),
+		logger = require('./server-logger');
 
 	// database
 	var db = new cradle
 		.Connection(config.db.host, config.db.port)
 		.database(config.db.database);
 
-	// http server
-	http.start({
+	// common config
+	var opts = {
+		config: config,
 		db: db,
 		error: error
-	});
+	};
+
+	// http server
+	http.start(opts);
 
 	// socket server
-	socket.start({
-		db: db,
-		error: error,
+	socket.start(_.extend({}, opts, {
 		server: http.server
-	});
+	}));
+
+	// logging server
+	logger.start(opts);
 
 	// error handler
 	function error (err) {

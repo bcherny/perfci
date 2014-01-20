@@ -2,12 +2,17 @@
 
 	"use strict";
 
-	var config = require('cat-settings').loadSync(__dirname + '/config.json');
+	var http = require('http'),
+		socketio = require('socket.io'),
+		Logger = require('yal');
 
 	function start (opts) {
 
-		var http = require('http').Server(opts.server.callback()),
-			io = require('socket.io')(http);
+		// init logger
+		var log = new Logger('tcp://' + opts.config.logger.host + ':' + opts.config.logger.port);
+
+		// start socket server
+		var io = socketio(http.Server(opts.server.callback()));
 
 		//var me = this;
 
@@ -31,7 +36,7 @@
 					if (err || !doc || !doc.length) {
 						opts.error(err);
 					} else {
-						console.info('push', doc[0]);
+						log.info('push', doc[0]);
 						socket.emit('push', doc[0]);
 					}
 
@@ -42,11 +47,11 @@
 
 		});
 
-		io.listen(config.socket.port);
+		io.listen(opts.config.socket.port);
 
 		// log
-		if (config.debug) {
-			console.info('Started socket server on port ' + config.socket.port);
+		if (opts.config.debug) {
+			log.info('Started socket server on port ' + opts.config.socket.port);
 		}
 
 	}
