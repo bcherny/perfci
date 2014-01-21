@@ -3,7 +3,6 @@
 	"use strict";
 
 	// imports
-	require('colors');
 	var _ = require('lodash'),
 		config = require('cat-settings').loadSync(__dirname + '/config.json'),
 		cradle = require('cradle'),
@@ -12,11 +11,11 @@
 		when = require('when');
 
 	// check for environment vars
-	['SAUCE_USER', 'SAUCE_KEY'].forEach(function (key) {
-		if (_.isUndefined(process.env[key])) {
-			console.error((key + ' environment variable must be defined!').red);
-		}
-	});
+	// ['SAUCE_USER', 'SAUCE_KEY'].forEach(function (key) {
+	// 	if (_.isUndefined(process.env[key])) {
+	// 		console.error((key + ' environment variable must be defined!').red);
+	// 	}
+	// });
 
 	// model
 	var state = {

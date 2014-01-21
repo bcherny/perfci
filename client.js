@@ -4,13 +4,15 @@
 	// imports
 	require('./node_modules/odometer/odometer');
 
-	var json2html = require('json-to-html'),
+	var d3 = require('./lib/d3'),
+		json2html = require('json-to-html'),
 		request = require('browser-request'),
 		io = require('socket.io/node_modules/socket.io-client'),
 		when = require('when');
 
 	// vars
-	var data = [];
+	var data = [],
+		bar = null;
 
 	// load config file
 	load('config.json').then(init, error);
@@ -33,13 +35,22 @@
 			push(datum);
 		});
 
+		// init chart
+		graph(d3);
+
 	}
 
 	// helpers
+	
+	function graph (data) {
+
+	}
 
 	function push (datum) {
 
 		data.push(datum);
+
+		graph(data);
 		
 		setTimeout(render.bind(null, data), 0);
 
