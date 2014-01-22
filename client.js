@@ -4,15 +4,15 @@
 	// imports
 	require('./node_modules/odometer/odometer');
 
-	var d3 = require('./lib/d3'),
-		json2html = require('json-to-html'),
+	//json2html = require('json-to-html'),
+	var _ = require('lodash'),
+		d3 = require('./lib/d3'),
 		request = require('browser-request'),
 		io = require('socket.io/node_modules/socket.io-client'),
 		when = require('when');
 
 	// vars
-	var data = [],
-		bar = null;
+	var data = [];
 
 	// load config file
 	load('config.json').then(init, error);
@@ -35,14 +35,56 @@
 			push(datum);
 		});
 
-		// init chart
-		graph(d3);
-
 	}
 
 	// helpers
 	
 	function graph (data) {
+
+		/**
+		 *     ^
+		 *     |
+		 *   t |
+		 *   i |
+		 *   m |
+		 *   e |
+		 *     |______________>
+		 *           runs
+		 * 
+		 */
+
+		var svg = d3.select('#chart'),
+			// x = d3.scale.linear(),
+			// y = d3.scale.linear(),
+			// xAxis = d3.svg.axis().scale(x).orient('bottom'),
+			// yAxis = d3.svg.axis().scale(y).orient('left'),
+			height = svg.offsetHeight,
+			width = svg.offsetWidth,
+			means = _.pluck(_.pluck(data, 'value'), 'mean'),
+			max = d3.max(means);
+
+		console.log('graph', _.pluck(_.pluck(data, 'value'), 'mean'));
+
+		svg
+		.selectAll('.bar')
+		.remove()
+		.data(means)
+		.enter()
+		.append('div')
+		.style('height', function (d) { return 100*d/max + '%'; })
+		.style('width', 100/data.length + '%')
+		.text(function (d) { return d; });
+		// .attr('class', 'bar')
+		// .attr('x', function (d) {
+		// 	return x(d.letter);
+		// })
+		// .attr('width', 100/data.length + '%')
+		// .attr('y', function (d) {
+		// 	return y(d.frequency);
+		// })
+		// .attr('height', function (d) {
+		// 	return height - y(d.frequency);
+		// });
 
 	}
 
@@ -59,7 +101,7 @@
 	function render (data) {
 
 		document.querySelector('#count .odometer').innerHTML = data.length;
-		document.querySelector('#json').innerHTML = json2html(data);
+		//document.querySelector('#json').innerHTML = json2html(data);
 
 	}
 

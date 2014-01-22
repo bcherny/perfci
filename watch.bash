@@ -6,4 +6,4 @@ clear
 stylus -w stylus -o css &
 
 # start browserify
-watchify client.js -o client.compiled.js &
+watchify client.js -o client.compiled.js -d &
