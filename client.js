@@ -53,38 +53,31 @@
 		 * 
 		 */
 
-		var svg = d3.select('#chart'),
-			// x = d3.scale.linear(),
-			// y = d3.scale.linear(),
-			// xAxis = d3.svg.axis().scale(x).orient('bottom'),
-			// yAxis = d3.svg.axis().scale(y).orient('left'),
-			height = svg.offsetHeight,
-			width = svg.offsetWidth,
-			means = _.pluck(_.pluck(data, 'value'), 'mean'),
+		var means = _.pluck(_.pluck(data, 'value'), 'mean'),
 			max = d3.max(means);
 
-		console.log('graph', _.pluck(_.pluck(data, 'value'), 'mean'));
-
-		svg
+		d3
+		.select('#chart')
 		.selectAll('.bar')
-		.remove()
 		.data(means)
 		.enter()
 		.append('div')
 		.style('height', function (d) { return 100*d/max + '%'; })
-		.style('width', 100/data.length + '%')
-		.text(function (d) { return d; });
-		// .attr('class', 'bar')
-		// .attr('x', function (d) {
-		// 	return x(d.letter);
-		// })
-		// .attr('width', 100/data.length + '%')
-		// .attr('y', function (d) {
-		// 	return y(d.frequency);
-		// })
-		// .attr('height', function (d) {
-		// 	return height - y(d.frequency);
-		// });
+		.style('left', function (d, n) { return (15 + 1)*n + 'px'; })
+		.html(function (s) { return '<span>' + ms(s) + '</span>'; })
+		.attr('class', 'bar');
+
+	}
+
+	function ms (s, precision) {
+
+		if (precision === void 0) {
+			precision = 3;
+		}
+
+		precision = Math.pow(10, precision);
+
+		return Math.round(s*1000*precision)/precision;
 
 	}
 
