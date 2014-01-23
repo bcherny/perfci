@@ -13,6 +13,12 @@
 
 	// vars
 	var data = [];
+	var options = {
+		bar: {
+			spacing: 1,
+			width: 15
+		}
+	};
 
 	// load config file
 	load('config.json').then(init, error);
@@ -62,10 +68,40 @@
 		.data(means)
 		.enter()
 		.append('div')
-		.style('height', function (d) { return 100*d/max + '%'; })
-		.style('left', function (d, n) { return (15 + 1)*n + 'px'; })
-		.html(function (s) { return '<span>' + ms(s) + '</span>'; })
-		.attr('class', 'bar');
+		.style('height', function (d) {
+			return 100*d/max + '%';
+		})
+		.style('left', function (d, n) {
+			return (options.bar.width + options.bar.spacing)*n + 'px';
+		})
+		.html(function (s) {
+			return '<span class="time ms">' + ms(s) + '</span>';
+		})
+		.attr('class', 'bar')
+		.attr('data-value', function (s) { return s; });
+
+		color(document.querySelectorAll('#chart .bar'));
+
+	}
+
+	function color (elements) {
+
+		var previous = null;
+
+		_.each(elements, function (element) {
+
+			var value = element.getAttribute('data-value'),
+				color = 'red';
+
+			if (previous === null || value < previous) {
+				color = 'green';
+			}
+
+			element.classList.add(color);
+
+			previous = value;
+
+		});
 
 	}
 
